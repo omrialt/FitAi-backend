@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Post,
@@ -21,7 +20,6 @@ import { paginationSchema } from '../../common/dto/pagination.dto';
 @UseGuards(RolesGuard) // Apply RolesGuard to all routes in this controller
 export class TrainingPlanController {
   constructor(private readonly trainingPlanService: TrainingPlanService) {}
-
   @Post()
   @Roles('trainer', 'admin') // Only trainers and admins can create plans
   async create(
@@ -55,5 +53,4 @@ export class TrainingPlanController {
   ) {
     return this.trainingPlanService.update(id, data);
   }
-
 }

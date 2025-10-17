@@ -10,8 +10,13 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-    MongooseModule.forRoot(process.env.MONGO_URI as string),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [configuration],
+    }),
+    MongooseModule.forRoot(
+      process.env.MONGO_URI || 'mongodb://localhost:27017/fitai',
+    ),
     TrainingPlanModule,
   ],
   providers: [

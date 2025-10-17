@@ -19,12 +19,17 @@ async function bootstrap() {
   expressApp.use(compression());
   expressApp.use(cookieParser());
 
-  // ValidationPipe גלובלי לכל הבקשות
+  // Global validation pipe with custom error handling
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: false,
       transform: true,
+      exceptionFactory: (errors) => {
+        console.log('Validation errors:', errors);
+        return errors;
+      },
+      validateCustomDecorators: true,
     }),
   );
 
