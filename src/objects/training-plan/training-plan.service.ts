@@ -8,6 +8,7 @@ import { Model, SortOrder } from 'mongoose';
 import {
   TrainingPlan,
   TrainingPlanDocument,
+  Exercise,
   trainingPlanSchema,
 } from './training-plan.schema';
 import {
@@ -15,6 +16,22 @@ import {
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
 
+export class CreateTrainingPlanDto {
+  userId!: string;
+  title!: string;
+  description!: string;
+  durationWeeks!: number;
+  exercises?: Exercise[];
+  difficulty?: string;
+}
+
+export class UpdateTrainingPlanDto {
+  title?: string;
+  description?: string;
+  durationWeeks?: number;
+  exercises?: Exercise[];
+  difficulty?: string;
+}
 interface MongooseError extends Error {
   code?: number;
   name: string;
@@ -34,7 +51,6 @@ export class TrainingPlanService {
     if (!sort) return undefined;
     return { [sort]: order === 'asc' ? 1 : -1 };
   }
-
   private validateData(data: Partial<TrainingPlan>): Partial<TrainingPlan> {
     const result = trainingPlanSchema.partial().safeParse(data);
     if (!result.success) {
@@ -42,7 +58,7 @@ export class TrainingPlanService {
         result.error.errors.map((e) => e.message).join(', '),
       );
     }
-    return result.data;
+    return result.data as Partial<TrainingPlan>;
   }
 
   private handleMongoError(error: unknown): never {
