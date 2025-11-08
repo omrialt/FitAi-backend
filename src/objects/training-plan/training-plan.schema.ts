@@ -84,6 +84,7 @@ export const TrainingPlanSchema = new Schema(
       enum: ['beginner', 'intermediate', 'advanced'],
       default: 'beginner',
     },
+    notes: { type: String, required: false },
   },
   {
     timestamps: true,

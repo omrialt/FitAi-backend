@@ -71,7 +71,9 @@ export class NutritionPlanService {
   ): Promise<PaginatedResponse<NutritionPlan>> {
     const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = query;
     const skip = (page - 1) * limit;
-    const sortQuery = { [sort]: order === 'asc' ? 1 : -1 };
+    const sortQuery = {
+      [sort]: order === 'asc' ? (1 as const) : (-1 as const),
+    };
 
     const [plans, total] = await Promise.all([
       this.nutritionPlanModel

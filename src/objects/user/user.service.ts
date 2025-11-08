@@ -5,8 +5,8 @@ import { UserDocument } from './user.schema';
 import * as bcrypt from 'bcrypt';
 
 export class CreateUserDto {
-  fullName: string;
-  email: string;
+  fullName!: string;
+  email!: string;
   password!: string;
   role?: string;
   authProvider?: string;
