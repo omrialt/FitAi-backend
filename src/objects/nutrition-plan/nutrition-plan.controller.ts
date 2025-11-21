@@ -9,6 +9,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   NutritionPlanService,
@@ -51,5 +52,29 @@ export class NutritionPlanController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
     return this.nutritionPlanService.remove(id);
+  }
+
+  @Get('user/:userId/with-shared')
+  findByUserWithShared(@Param('userId') userId: string) {
+    return this.nutritionPlanService.findByUserIdWithShared(userId);
+  }
+
+  @Post(':id/share')
+  sharePlan(
+    @Param('id') planId: string,
+    @Body() body: { userIds: string[] },
+  ) {
+    if (!body.userIds || !Array.isArray(body.userIds)) {
+      throw new ForbiddenException('userIds array is required');
+    }
+    return this.nutritionPlanService.sharePlan(planId, body.userIds);
+  }
+
+  @Delete(':id/share/:userId')
+  revokeShare(
+    @Param('id') planId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.nutritionPlanService.revokeShare(planId, userId);
   }
 }

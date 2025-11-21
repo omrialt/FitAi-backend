@@ -18,10 +18,10 @@ export const physicalDataSchema = z.object({
   }),
   heightCm: z
     .number({
-      required_error: 'Height in cm is required',
       invalid_type_error: 'Height must be a number',
     })
-    .positive(),
+    .positive()
+    .optional(),
   weightKg: z
     .number({
       required_error: 'Weight in kg is required',
@@ -43,7 +43,7 @@ export type Measurements = z.infer<typeof measurementsSchema>;
 export const PhysicalDataSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    heightCm: { type: Number, required: true },
+    heightCm: { type: Number },
     weightKg: { type: Number, required: true },
     bodyFatPercent: { type: Number, min: 0, max: 100 },
     measurements: {

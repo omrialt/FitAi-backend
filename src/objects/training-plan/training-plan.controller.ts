@@ -7,6 +7,8 @@ import {
   Put,
   Query,
   UseGuards,
+  Delete,
+  ForbiddenException,
 } from '@nestjs/common';
 import { TrainingPlanService } from './training-plan.service';
 import { TrainingPlan, trainingPlanSchema } from './training-plan.schema';
@@ -52,5 +54,32 @@ export class TrainingPlanController {
     data: Partial<TrainingPlan>,
   ) {
     return this.trainingPlanService.update(id, data);
+  }
+
+  @Get('user/:userId/with-shared')
+  @Roles('user', 'trainer', 'admin')
+  async findByUserWithShared(@Param('userId') userId: string) {
+    return this.trainingPlanService.findByUserIdWithShared(userId);
+  }
+
+  @Post(':id/share')
+  @Roles('trainer', 'admin')
+  async sharePlan(
+    @Param('id') planId: string,
+    @Body() body: { userIds: string[] },
+  ) {
+    if (!body.userIds || !Array.isArray(body.userIds)) {
+      throw new ForbiddenException('userIds array is required');
+    }
+    return this.trainingPlanService.sharePlan(planId, body.userIds);
+  }
+
+  @Delete(':id/share/:userId')
+  @Roles('trainer', 'admin')
+  async revokeShare(
+    @Param('id') planId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.trainingPlanService.revokeShare(planId, userId);
   }
 }

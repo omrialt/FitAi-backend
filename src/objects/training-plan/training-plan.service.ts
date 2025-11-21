@@ -147,4 +147,79 @@ export class TrainingPlanService {
       this.handleMongoError(error);
     }
   }
+
+  async findByUserIdWithShared(userId: string): Promise<TrainingPlan[]> {
+    try {
+      const plans = await this.trainingPlanModel
+        .find({
+          $or: [
+            { userId },
+            { sharedWith: userId },
+          ],
+        })
+        .populate('userId', 'fullName email')
+        .populate('trainerId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .sort({ createdAt: -1 })
+        .exec();
+      return plans.map((plan) => plan.toObject());
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async sharePlan(planId: string, userIds: string[]): Promise<TrainingPlan> {
+    try {
+      const plan = await this.trainingPlanModel
+        .findByIdAndUpdate(
+          planId,
+          { $addToSet: { sharedWith: { $each: userIds } } },
+          { new: true },
+        )
+        .populate('userId', 'fullName email')
+        .populate('trainerId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .exec();
+      if (!plan) throw new NotFoundException('Training plan not found');
+      return plan.toObject();
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async revokeShare(planId: string, userId: string): Promise<TrainingPlan> {
+    try {
+      const plan = await this.trainingPlanModel
+        .findByIdAndUpdate(
+          planId,
+          { $pull: { sharedWith: userId } },
+          { new: true },
+        )
+        .populate('userId', 'fullName email')
+        .populate('trainerId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .exec();
+      if (!plan) throw new NotFoundException('Training plan not found');
+      return plan.toObject();
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async hasAccessToPlan(
+    planId: string,
+    currentUserId: string,
+  ): Promise<boolean> {
+    try {
+      const plan = await this.trainingPlanModel.findById(planId).exec();
+      if (!plan) return false;
+      const userIdStr = plan.userId.toString();
+      const sharedWithIds = (plan.sharedWith || []).map((id) => id.toString());
+      return (
+        userIdStr === currentUserId || sharedWithIds.includes(currentUserId)
+      );
+    } catch (error) {
+      return false;
+    }
+  }
 }

@@ -3,6 +3,18 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
 
 // Define Zod enums
 export const mealTypeSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
+export const accessLevelSchema = z.enum(['view', 'edit']);
+export const objectTypeSchema = z.enum(['trainingPlan', 'nutritionPlan']);
+
+// Define SharedAccessEntry schema
+export const sharedAccessEntrySchema = z.object({
+  userId: z.string({
+    required_error: 'User ID is required for shared access',
+    invalid_type_error: 'User ID must be a string',
+  }),
+  accessLevel: accessLevelSchema,
+  objectType: objectTypeSchema,
+});
 
 // Define the Food schema
 export const foodSchema = z.object({
@@ -48,6 +60,24 @@ export const mealSchema = z.object({
   foods: z.array(foodSchema).default([]),
 });
 
+// Define the Rating schema
+export const ratingSchema = z.object({
+  userId: z.string({
+    required_error: 'User ID is required for rating',
+    invalid_type_error: 'User ID must be a string',
+  }),
+  rating: z
+    .number({
+      required_error: 'Rating is required',
+      invalid_type_error: 'Rating must be a number',
+    })
+    .int()
+    .min(1, 'Rating must be at least 1')
+    .max(5, 'Rating must be at most 5'),
+  comment: z.string().optional(),
+  createdAt: z.date().default(() => new Date()),
+});
+
 // Define the Zod schema for validation
 export const nutritionPlanSchema = z.object({
   userId: z.string({
@@ -69,6 +99,11 @@ export const nutritionPlanSchema = z.object({
     })
     .positive(),
   meals: z.array(mealSchema).default([]),
+  ratings: z.array(ratingSchema).default([]),
+  averageRating: z.number().min(0).max(5).default(0),
+  totalRatings: z.number().int().nonnegative().default(0),
+  sharedWith: z.array(z.string()).default([]),
+  sharedAccess: z.array(sharedAccessEntrySchema).default([]),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -77,7 +112,19 @@ export const nutritionPlanSchema = z.object({
 export type NutritionPlan = z.infer<typeof nutritionPlanSchema>;
 export type Meal = z.infer<typeof mealSchema>;
 export type Food = z.infer<typeof foodSchema>;
+export type Rating = z.infer<typeof ratingSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
+export type SharedAccessEntry = z.infer<typeof sharedAccessEntrySchema>;
+export type AccessLevel = z.infer<typeof accessLevelSchema>;
+export type ObjectType = z.infer<typeof objectTypeSchema>;
+
+// Define Mongoose Rating schema
+const RatingMongooseSchema = {
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  comment: { type: String },
+  createdAt: { type: Date, required: true, default: Date.now },
+};
 
 // Define Mongoose schema
 export const NutritionPlanSchema = new Schema(
@@ -111,6 +158,31 @@ export const NutritionPlanSchema = new Schema(
       ],
       default: [],
     },
+    ratings: {
+      type: [RatingMongooseSchema],
+      default: [],
+    },
+    averageRating: { type: Number, default: 0, min: 0, max: 5 },
+    totalRatings: { type: Number, default: 0, min: 0 },
+    sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    sharedAccess: {
+      type: [
+        {
+          userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+          accessLevel: {
+            type: String,
+            enum: ['view', 'edit'],
+            required: true,
+          },
+          objectType: {
+            type: String,
+            enum: ['trainingPlan', 'nutritionPlan'],
+            required: true,
+          },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -122,9 +194,31 @@ export const NutritionPlanSchema = new Schema(
 NutritionPlanSchema.index({ userId: 1 });
 NutritionPlanSchema.index({ totalCalories: 1 });
 NutritionPlanSchema.index({ createdAt: -1 });
+NutritionPlanSchema.index({ averageRating: -1 });
+NutritionPlanSchema.index({ totalRatings: -1 });
+NutritionPlanSchema.index({ 'ratings.userId': 1 });
+NutritionPlanSchema.index({ 'ratings.rating': -1 });
+NutritionPlanSchema.index({ 'ratings.createdAt': -1 });
+NutritionPlanSchema.index({ sharedWith: 1 });
+NutritionPlanSchema.index({ 'sharedAccess.userId': 1 });
+NutritionPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
 
-// Add validation middleware
+// Add middleware to calculate average rating and total ratings
 NutritionPlanSchema.pre('save', function (next) {
+  // Calculate average rating and total ratings
+  if (this.ratings && this.ratings.length > 0) {
+    const totalRating = this.ratings.reduce(
+      (sum: number, rating: { rating: number }) => sum + rating.rating,
+      0,
+    );
+    this.averageRating = Number((totalRating / this.ratings.length).toFixed(2));
+    this.totalRatings = this.ratings.length;
+  } else {
+    this.averageRating = 0;
+    this.totalRatings = 0;
+  }
+
+  // Validate with Zod schema
   const result = nutritionPlanSchema.safeParse(this.toObject());
   if (!result.success) {
     next(new Error(result.error.message));

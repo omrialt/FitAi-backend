@@ -172,4 +172,85 @@ export class NutritionPlanService {
 
     return totals;
   }
+
+  async findByUserIdWithShared(userId: string): Promise<NutritionPlanDocument[]> {
+    try {
+      return await this.nutritionPlanModel
+        .find({
+          $or: [
+            { userId: new Types.ObjectId(userId) },
+            { sharedWith: userId },
+          ],
+        })
+        .populate('userId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .sort({ createdAt: -1 })
+        .exec();
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async sharePlan(
+    planId: string,
+    userIds: string[],
+  ): Promise<NutritionPlanDocument> {
+    try {
+      const plan = await this.nutritionPlanModel
+        .findByIdAndUpdate(
+          planId,
+          { $addToSet: { sharedWith: { $each: userIds } } },
+          { new: true },
+        )
+        .populate('userId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .exec();
+      if (!plan) {
+        throw new NotFoundException(`Nutrition plan with ID ${planId} not found`);
+      }
+      return plan;
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async revokeShare(
+    planId: string,
+    userId: string,
+  ): Promise<NutritionPlanDocument> {
+    try {
+      const plan = await this.nutritionPlanModel
+        .findByIdAndUpdate(
+          planId,
+          { $pull: { sharedWith: userId } },
+          { new: true },
+        )
+        .populate('userId', 'fullName email')
+        .populate('sharedWith', 'fullName email')
+        .exec();
+      if (!plan) {
+        throw new NotFoundException(`Nutrition plan with ID ${planId} not found`);
+      }
+      return plan;
+    } catch (error) {
+      this.handleMongoError(error);
+    }
+  }
+
+  async hasAccessToPlan(
+    planId: string,
+    currentUserId: string,
+  ): Promise<boolean> {
+    try {
+      const plan = await this.nutritionPlanModel.findById(planId).exec();
+      if (!plan) return false;
+      const userIdStr = plan.userId.toString();
+      const sharedWithIds = (plan.sharedWith || []).map((id) => id.toString());
+      return (
+        userIdStr === currentUserId || sharedWithIds.includes(currentUserId)
+      );
+    } catch (error) {
+      return false;
+    }
+  }
 }

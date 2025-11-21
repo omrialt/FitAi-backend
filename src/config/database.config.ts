@@ -1,5 +1,18 @@
 import { MongooseModuleOptions } from '@nestjs/mongoose';
 
-export const databaseConfig = (): MongooseModuleOptions => ({
-  uri: process.env.MONGO_URI || 'mongodb://localhost:27017/fitai',
-});
+export const getDatabaseConfig = (): MongooseModuleOptions => {
+  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/fitai';
+  
+  console.log('🔧 Database Configuration');
+  console.log(
+    `📍 MongoDB URI: ${mongoUri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@')}`,
+  );
+  
+  return {
+    uri: mongoUri,
+    // Connection timeout settings
+    connectTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+  };
+};

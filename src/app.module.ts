@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import configuration from './config/configuration';
+import { getDatabaseConfig } from './config/database.config';
 import { UserModule } from './objects/user/user.module';
 import { TrainingPlanModule } from './objects/training-plan/training-plan.module';
 import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.module';
@@ -18,9 +19,9 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
       isGlobal: true,
       load: [configuration],
     }),
-    MongooseModule.forRoot(
-      process.env.MONGO_URI || 'mongodb://localhost:27017/fitai',
-    ),
+    MongooseModule.forRootAsync({
+      useFactory: () => getDatabaseConfig(),
+    }),
     UserModule,
     TrainingPlanModule,
     NutritionPlanModule,

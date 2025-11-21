@@ -4,6 +4,7 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
 // Define Zod enums
 export const userRoleSchema = z.enum(['user', 'trainer', 'admin']);
 export const authProviderSchema = z.enum(['email', 'google']);
+export const genderSchema = z.enum(['male', 'female', 'other']);
 
 // Define the Zod schema for validation
 export const userSchema = z.object({
@@ -27,6 +28,14 @@ export const userSchema = z.object({
     .min(6, 'Password must be at least 6 characters'),
   role: userRoleSchema.default('user'),
   authProvider: authProviderSchema.default('email'),
+  gender: genderSchema.optional(),
+  birthDate: z.date().optional(),
+  height: z.number().positive('Height must be a positive number').optional(),
+  trainerId: z.string().optional().nullable(),
+  avatarUrl: z.string().url('Invalid URL format').optional(),
+  emailVerified: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  lastLogin: z.date().optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -35,6 +44,7 @@ export const userSchema = z.object({
 export type User = z.infer<typeof userSchema>;
 export type UserRole = z.infer<typeof userRoleSchema>;
 export type AuthProvider = z.infer<typeof authProviderSchema>;
+export type Gender = z.infer<typeof genderSchema>;
 
 // Define Mongoose schema
 export const UserSchema = new Schema(
@@ -58,6 +68,17 @@ export const UserSchema = new Schema(
       enum: ['email', 'google'],
       default: 'email',
     },
+    gender: {
+      type: String,
+      enum: ['male', 'female', 'other'],
+    },
+    birthDate: { type: Date },
+    height: { type: Number, min: 0 },
+    trainerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    avatarUrl: { type: String },
+    emailVerified: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
+    lastLogin: { type: Date },
   },
   {
     timestamps: true,

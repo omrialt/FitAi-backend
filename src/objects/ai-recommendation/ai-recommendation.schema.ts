@@ -8,6 +8,19 @@ export const recommendationCategorySchema = z.enum([
   'general',
 ]);
 
+export const generatedBySchema = z.enum(['ai', 'trainer']);
+
+// Define metadata schema
+export const metadataSchema = z
+  .object({
+    prompt: z.string().optional(),
+    temperature: z.number().optional(),
+    tokensUsed: z.number().optional(),
+    version: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .optional();
+
 // Define the Zod schema for validation
 export const aiRecommendationSchema = z.object({
   userId: z.string({
@@ -19,11 +32,9 @@ export const aiRecommendationSchema = z.object({
     required_error: 'Content is required',
     invalid_type_error: 'Content must be a string',
   }),
-  aiModelUsed: z.string({
-    required_error: 'AI model used is required',
-    invalid_type_error: 'AI model must be a string',
-  }),
-  metadata: z.record(z.any()).default({}),
+  generatedBy: generatedBySchema,
+  aiModelUsed: z.string().nullable(),
+  metadata: metadataSchema.default({}),
   createdAt: z.date().optional(),
 });
 
@@ -32,6 +43,8 @@ export type AiRecommendation = z.infer<typeof aiRecommendationSchema>;
 export type RecommendationCategory = z.infer<
   typeof recommendationCategorySchema
 >;
+export type GeneratedBy = z.infer<typeof generatedBySchema>;
+export type RecommendationMetadata = z.infer<typeof metadataSchema>;
 
 // Define Mongoose schema
 export const AiRecommendationSchema = new Schema(
@@ -43,8 +56,22 @@ export const AiRecommendationSchema = new Schema(
       required: true,
     },
     content: { type: String, required: true },
-    aiModelUsed: { type: String, required: true },
-    metadata: { type: Schema.Types.Mixed, default: {} },
+    generatedBy: {
+      type: String,
+      enum: ['ai', 'trainer'],
+      required: true,
+    },
+    aiModelUsed: { type: String, default: null },
+    metadata: {
+      type: {
+        prompt: { type: String },
+        temperature: { type: Number },
+        tokensUsed: { type: Number },
+        version: { type: String },
+        tags: [{ type: String }],
+      },
+      default: {},
+    },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -55,6 +82,7 @@ export const AiRecommendationSchema = new Schema(
 // Add indexes
 AiRecommendationSchema.index({ userId: 1 });
 AiRecommendationSchema.index({ category: 1 });
+AiRecommendationSchema.index({ generatedBy: 1 });
 AiRecommendationSchema.index({ createdAt: -1 });
 AiRecommendationSchema.index({ userId: 1, createdAt: -1 });
 
