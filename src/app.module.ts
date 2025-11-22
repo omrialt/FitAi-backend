@@ -9,6 +9,7 @@ import { TrainingPlanModule } from './objects/training-plan/training-plan.module
 import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.module';
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -22,6 +23,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     MongooseModule.forRootAsync({
       useFactory: () => getDatabaseConfig(),
     }),
+    CloudinaryModule,
     UserModule,
     TrainingPlanModule,
     NutritionPlanModule,

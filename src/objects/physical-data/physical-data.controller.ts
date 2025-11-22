@@ -56,7 +56,11 @@ export class PhysicalDataController {
       return { bmi: 0, category: 'No data' };
     }
 
-    const bmi = await this.physicalDataService.calculateBMI(
+    if (!latest.heightCm) {
+      return { bmi: 0, category: 'Height not available' };
+    }
+
+    const bmi = this.physicalDataService.calculateBMI(
       latest.heightCm,
       latest.weightKg,
     );
