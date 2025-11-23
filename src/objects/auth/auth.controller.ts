@@ -8,7 +8,9 @@ import {
   HttpStatus,
   Request,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import * as express from 'express';
 import * as jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
@@ -136,7 +138,9 @@ export class AuthController {
    * Get current user profile
    */
   @Get('profile')
+  @UseGuards(AuthGuard('jwt'))
   async getProfile(@Request() req: AuthRequest) {
+    console.log('📝 Profile endpoint - req.user:', req.user);
     const userId = req.user?.id;
     if (!userId) {
       throw new Error('User ID is required');

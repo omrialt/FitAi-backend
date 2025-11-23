@@ -9,7 +9,9 @@ import {
   UseGuards,
   Delete,
   ForbiddenException,
+  Request,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { TrainingPlanService } from './training-plan.service';
 import { TrainingPlan, trainingPlanSchema } from './training-plan.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -18,8 +20,17 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
 
+interface AuthRequest extends Request {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    roles: string[];
+  };
+}
+
 @Controller('training-plans')
-@UseGuards(RolesGuard) // Apply RolesGuard to all routes in this controller
+@UseGuards(AuthGuard('jwt'), RolesGuard) // Use Passport JWT guard
 export class TrainingPlanController {
   constructor(private readonly trainingPlanService: TrainingPlanService) {}
   @Post()
@@ -34,10 +45,14 @@ export class TrainingPlanController {
   @Get()
   @Roles('user', 'trainer', 'admin') // All authenticated users can view plans
   async findAll(
+    @Request() req: AuthRequest,
     @Query(new ZodValidationPipe(paginationSchema))
     query: PaginationDto,
   ) {
-    return this.trainingPlanService.findAll(query);
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    return this.trainingPlanService.findAll(query, userId, userRole);
   }
 
   @Get(':id')

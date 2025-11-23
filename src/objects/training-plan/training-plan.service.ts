@@ -88,20 +88,51 @@ export class TrainingPlanService {
 
   async findAll(
     query: PaginationDto,
+    userId: string,
+    userRole: string,
   ): Promise<PaginatedResponse<TrainingPlan>> {
     const { page = 1, limit = 10, sort, order = 'asc' } = query;
     const skip = (page - 1) * limit;
     const sortQuery = this.buildSortQuery(sort, order);
 
+    // Build filter based on user role
+    let filter = {};
+    if (userRole === 'admin') {
+      // Admin can see all plans
+      console.log('Admin user - fetching all training plans');
+    } else if (userRole === 'trainer') {
+      // Trainer can see plans they created or plans shared with them
+      filter = {
+        $or: [{ trainerId: userId }, { sharedWith: userId }],
+      };
+      console.log(
+        'Trainer user - fetching plans created by or shared with:',
+        userId,
+      );
+    } else {
+      // Regular user can see plans assigned to them or shared with them
+      filter = {
+        $or: [{ userId: userId }, { sharedWith: userId }],
+      };
+      console.log(
+        'Regular user - fetching plans assigned to or shared with:',
+        userId,
+      );
+    }
+
     const [plans, total] = await Promise.all([
       this.trainingPlanModel
-        .find()
+        .find(filter)
         .sort(sortQuery)
         .skip(skip)
         .limit(limit)
         .exec(),
-      this.trainingPlanModel.countDocuments(),
+      this.trainingPlanModel.countDocuments(filter),
     ]);
+
+    console.log(
+      `Found ${plans.length} training plans for user ${userId} (role: ${userRole})`,
+    );
 
     return {
       items: plans.map((plan) => plan.toObject()),
@@ -152,10 +183,7 @@ export class TrainingPlanService {
     try {
       const plans = await this.trainingPlanModel
         .find({
-          $or: [
-            { userId },
-            { sharedWith: userId },
-          ],
+          $or: [{ userId }, { sharedWith: userId }],
         })
         .populate('userId', 'fullName email')
         .populate('trainerId', 'fullName email')

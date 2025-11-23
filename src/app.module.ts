@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import configuration from './config/configuration';
 import { getDatabaseConfig } from './config/database.config';
 import { UserModule } from './objects/user/user.module';
@@ -12,7 +12,6 @@ import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommend
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { RolesGuard } from './common/guards/roles.guard';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 @Module({
@@ -36,10 +35,6 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
     },
     {
       provide: APP_INTERCEPTOR,

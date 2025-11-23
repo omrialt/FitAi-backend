@@ -19,6 +19,11 @@ async function bootstrap() {
   expressApp.use(compression());
   expressApp.use(cookieParser());
 
+  // Log all incoming requests with headers
+  expressApp.use((req, res, next) => {
+    next();
+  });
+
   // Global validation pipe with custom error handling
   app.useGlobalPipes(
     new ValidationPipe({

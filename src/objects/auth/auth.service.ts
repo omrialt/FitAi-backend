@@ -95,7 +95,7 @@ export class AuthService {
     }
 
     // Generate tokens
-    const tokens = this.generateTokens(user._id.toString(), user.email);
+    const tokens = await this.generateTokens(user._id.toString(), user.email);
 
     // Remove password from response
     const { password: _, ...userObject } = user.toObject();
@@ -132,7 +132,7 @@ export class AuthService {
     });
 
     // Generate tokens
-    const tokens = this.generateTokens(user._id.toString(), user.email);
+    const tokens = await this.generateTokens(user._id.toString(), user.email);
 
     // Remove password from response
     const { password: _, ...userObject } = user.toObject();
@@ -175,7 +175,7 @@ export class AuthService {
       }
 
       // Generate new tokens
-      return this.generateTokens(user._id.toString(), user.email);
+      return await this.generateTokens(user._id.toString(), user.email);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -301,7 +301,7 @@ export class AuthService {
       await user.save();
 
       // Generate tokens
-      const tokens = this.generateTokens(user._id.toString(), user.email);
+      const tokens = await this.generateTokens(user._id.toString(), user.email);
 
       // Remove password from response and ensure _id is included
       const { password: _, ...userObject } = user.toObject();
@@ -377,7 +377,7 @@ export class AuthService {
     }
 
     // Generate new tokens with updated user info
-    const tokens = this.generateTokens(user._id.toString(), user.email);
+    const tokens = await this.generateTokens(user._id.toString(), user.email);
 
     const userObject = user.toObject();
     return {
@@ -445,18 +445,22 @@ export class AuthService {
   /**
    * Generate JWT tokens
    */
-  private generateTokens(
+  private async generateTokens(
     userId: string,
     email: string,
-  ): { accessToken: string; refreshToken: string } {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const accessSecret = process.env.JWT_ACCESS_SECRET || 'access-secret';
     const refreshSecret = process.env.JWT_REFRESH_SECRET || 'refresh-secret';
 
-    const accessToken = jwt.sign({ userId, email }, accessSecret, {
+    // Fetch user role for token payload
+    const user = await this.userModel.findById(userId).select('role');
+    const role = user?.role || 'user';
+
+    const accessToken = jwt.sign({ userId, email, role }, accessSecret, {
       expiresIn: '15m',
     });
 
-    const refreshToken = jwt.sign({ userId, email }, refreshSecret, {
+    const refreshToken = jwt.sign({ userId, email, role }, refreshSecret, {
       expiresIn: '7d',
     });
 

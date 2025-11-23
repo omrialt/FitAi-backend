@@ -10,7 +10,9 @@ export class RolesGuard implements CanActivate {
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
     const roles = this.reflector.get<string[]>('roles', context.getHandler());
+    console.log('🛡️ RolesGuard: Required roles:', roles);
     if (!roles) {
+      console.log('🛡️ RolesGuard: No roles required, allowing access');
       return true;
     }
     interface RequestWithUser {
@@ -20,10 +22,15 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const user = request.user;
 
-    return !!(
+    console.log('🛡️ RolesGuard: User from request:', user);
+
+    const hasAccess = !!(
       user &&
       user.roles &&
       roles.some((role) => user.roles && user.roles.includes(role))
     );
+
+    console.log('🛡️ RolesGuard: Access granted:', hasAccess);
+    return hasAccess;
   }
 }
