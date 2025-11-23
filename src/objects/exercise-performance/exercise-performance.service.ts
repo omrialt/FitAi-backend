@@ -5,28 +5,10 @@ import {
   ExercisePerformance,
   ExercisePerformanceDocument,
 } from './exercise-performance.schema';
-
-export interface CreateExercisePerformanceDto {
-  userId: string;
-  exerciseId: string;
-  trainingPlanId?: string;
-  trainingDayName: string;
-  setIndex: number;
-  weight: number;
-  reps: number;
-  timestamp: Date;
-  notes?: string;
-}
-
-export interface UpdateExercisePerformanceDto {
-  trainingPlanId?: string;
-  trainingDayName?: string;
-  setIndex?: number;
-  weight?: number;
-  reps?: number;
-  timestamp?: Date;
-  notes?: string;
-}
+import {
+  CreateExercisePerformanceDto,
+  UpdateExercisePerformanceDto,
+} from '../interfaces/exercise-performance.interfaces';
 
 @Injectable()
 export class ExercisePerformanceService {

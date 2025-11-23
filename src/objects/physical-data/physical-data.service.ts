@@ -14,23 +14,10 @@ import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-
-export class CreatePhysicalDataDto {
-  userId!: string;
-  heightCm!: number;
-  weightKg!: number;
-  bodyFatPercent?: number;
-  measurements?: Measurements;
-  dateRecorded?: Date;
-}
-
-export class UpdatePhysicalDataDto {
-  heightCm?: number;
-  weightKg?: number;
-  bodyFatPercent?: number;
-  measurements?: Measurements;
-  dateRecorded?: Date;
-}
+import {
+  CreatePhysicalDataDto,
+  UpdatePhysicalDataDto,
+} from '../interfaces/physical-data.interfaces';
 
 @Injectable()
 export class PhysicalDataService {

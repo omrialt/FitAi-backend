@@ -14,21 +14,10 @@ import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-
-export class CreateNutritionPlanDto {
-  userId!: string;
-  title!: string;
-  description!: string;
-  totalCalories!: number;
-  meals?: Meal[];
-}
-
-export class UpdateNutritionPlanDto {
-  title?: string;
-  description?: string;
-  totalCalories?: number;
-  meals?: Meal[];
-}
+import {
+  CreateNutritionPlanDto,
+  UpdateNutritionPlanDto,
+} from '../interfaces/nutrition-plan.interfaces';
 
 @Injectable()
 export class NutritionPlanService {

@@ -11,11 +11,11 @@ import {
   HttpStatus,
   ForbiddenException,
 } from '@nestjs/common';
-import {
-  NutritionPlanService,
+import { NutritionPlanService } from './nutrition-plan.service';
+import type {
   CreateNutritionPlanDto,
   UpdateNutritionPlanDto,
-} from './nutrition-plan.service';
+} from '../interfaces/nutrition-plan.interfaces';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 
 @Controller('nutrition-plans')
@@ -60,10 +60,7 @@ export class NutritionPlanController {
   }
 
   @Post(':id/share')
-  sharePlan(
-    @Param('id') planId: string,
-    @Body() body: { userIds: string[] },
-  ) {
+  sharePlan(@Param('id') planId: string, @Body() body: { userIds: string[] }) {
     if (!body.userIds || !Array.isArray(body.userIds)) {
       throw new ForbiddenException('userIds array is required');
     }

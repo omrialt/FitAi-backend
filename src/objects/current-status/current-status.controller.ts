@@ -12,7 +12,7 @@ import type {
   SetActiveTrainingPlanDto,
   SetActiveMenuDto,
   SetPhaseDto,
-} from './current-status.service';
+} from '../interfaces/current-status.interfaces';
 import type { CurrentStatus } from './current-status.schema';
 
 @Controller('status')

@@ -12,9 +12,11 @@ import {
 } from '@nestjs/common';
 import {
   PhysicalDataService,
+} from './physical-data.service';
+import type {
   CreatePhysicalDataDto,
   UpdatePhysicalDataDto,
-} from './physical-data.service';
+} from '../interfaces/physical-data.interfaces';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 
 @Controller('physical-data')

@@ -13,7 +13,7 @@ import { ExercisePerformanceService } from './exercise-performance.service';
 import type {
   CreateExercisePerformanceDto,
   UpdateExercisePerformanceDto,
-} from './exercise-performance.service';
+} from '../interfaces/exercise-performance.interfaces';
 import type { ExercisePerformance } from './exercise-performance.schema';
 
 @Controller('performance')

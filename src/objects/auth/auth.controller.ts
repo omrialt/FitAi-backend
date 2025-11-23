@@ -23,7 +23,7 @@ import type {
   ResetPasswordDto,
   UpdateProfileDto,
   CompleteProfileDto,
-} from './auth.service';
+} from '../interfaces/auth.interfaces';
 
 interface AuthRequest extends Request {
   user?: {

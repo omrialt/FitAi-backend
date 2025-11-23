@@ -14,19 +14,10 @@ import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-
-export class CreateAiRecommendationDto {
-  userId!: string;
-  category!: RecommendationCategory;
-  content!: string;
-  aiModelUsed!: string;
-  metadata?: Record<string, any>;
-}
-
-export class UpdateAiRecommendationDto {
-  content?: string;
-  metadata?: Record<string, any>;
-}
+import {
+  CreateAiRecommendationDto,
+  UpdateAiRecommendationDto,
+} from '../interfaces/ai-recommendation.interfaces';
 
 @Injectable()
 export class AiRecommendationService {

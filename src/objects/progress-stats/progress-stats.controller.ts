@@ -8,7 +8,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { ProgressStatsService } from './progress-stats.service';
-import type { UpdateProgressStatsDto } from './progress-stats.service';
+import type { UpdateProgressStatsDto } from '../interfaces/progress-stats.interfaces';
 import type { ProgressStats } from './progress-stats.schema';
 
 @Controller('progress')

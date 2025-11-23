@@ -8,34 +8,13 @@ import { Model, SortOrder } from 'mongoose';
 import {
   TrainingPlan,
   TrainingPlanDocument,
-  Exercise,
   trainingPlanSchema,
 } from './training-plan.schema';
 import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-
-export class CreateTrainingPlanDto {
-  userId!: string;
-  title!: string;
-  description!: string;
-  durationWeeks!: number;
-  exercises?: Exercise[];
-  difficulty?: string;
-}
-
-export class UpdateTrainingPlanDto {
-  title?: string;
-  description?: string;
-  durationWeeks?: number;
-  exercises?: Exercise[];
-  difficulty?: string;
-}
-interface MongooseError extends Error {
-  code?: number;
-  name: string;
-}
+import { MongooseError } from '../interfaces/training-plan.interfaces';
 
 @Injectable()
 export class TrainingPlanService {
