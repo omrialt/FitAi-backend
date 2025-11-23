@@ -38,7 +38,7 @@ export interface UpdateProfileDto {
   gender?: 'male' | 'female' | 'other';
   birthDate?: string;
   height?: number;
-  profileImage?: string;
+  avatarUrl?: string;
 }
 
 export interface CompleteProfileDto {

@@ -27,7 +27,7 @@ async function bootstrap() {
   // Global validation pipe with custom error handling
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
+      whitelist: false, // Changed to false to allow all properties
       forbidNonWhitelisted: false,
       transform: true,
       exceptionFactory: (errors) => {
