@@ -24,14 +24,7 @@ import type {
   UpdateProfileDto,
   CompleteProfileDto,
 } from '../interfaces/auth.interfaces';
-
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email?: string;
-    role?: string;
-  };
-}
+import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
 
 @Controller('auth')
 export class AuthController {

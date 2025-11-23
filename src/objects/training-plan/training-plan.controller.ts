@@ -19,15 +19,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
-
-interface AuthRequest extends Request {
-  user: {
-    id: string;
-    email: string;
-    role: string;
-    roles: string[];
-  };
-}
+import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
 
 @Controller('training-plans')
 @UseGuards(AuthGuard('jwt'), RolesGuard) // Use Passport JWT guard

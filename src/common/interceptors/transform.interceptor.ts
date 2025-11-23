@@ -7,12 +7,7 @@ import {
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Request } from 'express';
-
-export interface Response<T> {
-  data: T;
-  timestamp: string;
-  path: string;
-}
+import { Response } from '../interfaces/response.interfaces';
 
 @Injectable()
 export class TransformInterceptor<T>
