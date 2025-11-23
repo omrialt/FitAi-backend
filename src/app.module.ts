@@ -5,6 +5,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import configuration from './config/configuration';
 import { getDatabaseConfig } from './config/database.config';
 import { UserModule } from './objects/user/user.module';
+import { AuthModule } from './objects/auth/auth.module';
 import { TrainingPlanModule } from './objects/training-plan/training-plan.module';
 import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.module';
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
@@ -25,6 +26,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     }),
     CloudinaryModule,
     UserModule,
+    AuthModule,
     TrainingPlanModule,
     NutritionPlanModule,
     AiRecommendationModule,
