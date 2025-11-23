@@ -10,6 +10,7 @@ export const difficultySchema = z.enum([
 ]);
 export const accessLevelSchema = z.enum(['view', 'edit']);
 export const objectTypeSchema = z.enum(['trainingPlan', 'nutritionPlan']);
+export const programTypeSchema = z.enum(['fixedDays', 'rotation']);
 
 // Define SharedAccessEntry schema
 export const sharedAccessEntrySchema = z.object({
@@ -93,6 +94,15 @@ export const trainingDaySchema = z.object({
     required_error: 'Day name is required',
     invalid_type_error: 'Day name must be a string',
   }),
+  dayOfWeek: z
+    .number({
+      required_error: 'Day of week is required',
+      invalid_type_error: 'Day of week must be a number',
+    })
+    .int('Day of week must be an integer')
+    .min(0, 'Day of week must be between 0 and 6')
+    .max(6, 'Day of week must be between 0 and 6'),
+  plannedDate: z.date().optional(),
   exercises: z.array(exerciseSchema).default([]),
 });
 
@@ -115,6 +125,28 @@ export const trainingPlanSchema = z.object({
   difficulty: difficultySchema.default('beginner'),
   sharedWith: z.array(z.string()).default([]),
   sharedAccess: z.array(sharedAccessEntrySchema).default([]),
+  // Lifecycle fields
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
+  isActive: z.boolean().default(true),
+  // Program meta fields
+  programType: programTypeSchema.optional(),
+  rotationCycleLength: z
+    .number()
+    .int('Rotation cycle length must be an integer')
+    .positive('Rotation cycle length must be positive')
+    .optional(),
+  focus: z.string().optional(),
+  estimatedDuration: z
+    .number()
+    .int('Estimated duration must be an integer')
+    .positive('Estimated duration must be positive')
+    .optional(),
+  estimatedCalories: z
+    .number()
+    .int('Estimated calories must be an integer')
+    .positive('Estimated calories must be positive')
+    .optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -130,6 +162,7 @@ export type Difficulty = z.infer<typeof difficultySchema>;
 export type SharedAccessEntry = z.infer<typeof sharedAccessEntrySchema>;
 export type AccessLevel = z.infer<typeof accessLevelSchema>;
 export type ObjectType = z.infer<typeof objectTypeSchema>;
+export type ProgramType = z.infer<typeof programTypeSchema>;
 
 // Define Mongoose WeightHistoryEntry schema
 const WeightHistoryEntryMongooseSchema = {
@@ -171,6 +204,8 @@ const ExerciseMongooseSchema = {
 // Define Mongoose TrainingDay schema
 const TrainingDayMongooseSchema = {
   dayName: { type: String, required: true },
+  dayOfWeek: { type: Number, required: true, min: 0, max: 6 },
+  plannedDate: { type: Date },
   exercises: {
     type: [ExerciseMongooseSchema],
     default: [],
@@ -212,6 +247,28 @@ export const TrainingPlanSchema = new Schema(
       ],
       default: [],
     },
+    // Lifecycle fields
+    startDate: { type: Date },
+    endDate: { type: Date },
+    isActive: { type: Boolean, default: true },
+    // Program meta fields
+    programType: {
+      type: String,
+      enum: ['fixedDays', 'rotation'],
+    },
+    rotationCycleLength: {
+      type: Number,
+      min: 1,
+    },
+    focus: { type: String },
+    estimatedDuration: {
+      type: Number,
+      min: 1,
+    },
+    estimatedCalories: {
+      type: Number,
+      min: 1,
+    },
   },
   {
     timestamps: true,
@@ -231,6 +288,12 @@ TrainingPlanSchema.index({ 'days.exercises.muscleGroup': 1 });
 TrainingPlanSchema.index({ sharedWith: 1 });
 TrainingPlanSchema.index({ 'sharedAccess.userId': 1 });
 TrainingPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
+// New indexes for added fields
+TrainingPlanSchema.index({ 'days.dayOfWeek': 1 });
+TrainingPlanSchema.index({ startDate: 1 });
+TrainingPlanSchema.index({ isActive: 1 });
+TrainingPlanSchema.index({ programType: 1 });
+TrainingPlanSchema.index({ isActive: 1, startDate: 1 });
 
 // Add validation middleware
 TrainingPlanSchema.pre('save', function (next) {
