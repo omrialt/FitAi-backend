@@ -10,6 +10,7 @@ import {
   Res,
 } from '@nestjs/common';
 import * as express from 'express';
+import * as jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
 import type {
   LoginDto,
@@ -19,6 +20,7 @@ import type {
   ForgotPasswordDto,
   ResetPasswordDto,
   UpdateProfileDto,
+  CompleteProfileDto,
 } from './auth.service';
 
 interface AuthRequest extends Request {
@@ -86,10 +88,48 @@ export class AuthController {
   /**
    * Handle Google OAuth callback
    */
-  @Post('google/callback')
-  @HttpCode(HttpStatus.OK)
-  async googleCallback(@Body() body: { code: string }) {
-    return this.authService.handleGoogleCallback(body.code);
+  @Get('google/callback')
+  async googleCallback(
+    @Request() req: express.Request,
+    @Res() res: express.Response,
+  ) {
+    const code = req.query.code as string;
+    const error = req.query.error as string;
+
+    if (error) {
+      // Redirect to frontend with error
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(
+        `${frontendUrl}/login?error=${encodeURIComponent(error)}`,
+      );
+    }
+
+    if (!code) {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/login?error=no_code`);
+    }
+
+    try {
+      const authResponse = await this.authService.handleGoogleCallback(code);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+      // Redirect to frontend with tokens in URL (temporary, will be stored in frontend)
+      const params = new URLSearchParams({
+        accessToken: authResponse.tokens.accessToken,
+        refreshToken: authResponse.tokens.refreshToken,
+        user: JSON.stringify(authResponse.user),
+      });
+
+      // If user needs to complete profile, redirect to complete-profile page
+      const redirectPath = authResponse.needsProfile
+        ? '/complete-profile'
+        : '/auth/google/callback';
+
+      return res.redirect(`${frontendUrl}${redirectPath}?${params.toString()}`);
+    } catch {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+    }
   }
 
   /**
@@ -117,6 +157,37 @@ export class AuthController {
       throw new Error('User ID is required');
     }
     return this.authService.updateProfile(userId, updateProfileDto);
+  }
+
+  /**
+   * Complete profile for Google OAuth users
+   */
+  @Patch('complete-profile')
+  async completeProfile(
+    @Request() req: AuthRequest & { headers: { authorization?: string } },
+    @Body() completeProfileDto: CompleteProfileDto,
+  ) {
+    // Try to get userId from req.user (if middleware set it) or decode from JWT
+    let userId = req.user?.id;
+
+    if (!userId) {
+      // Extract and decode JWT to get userId
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (token) {
+        try {
+          const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';
+          const decoded = jwt.verify(token, secret) as { userId: string };
+          userId = decoded.userId;
+        } catch {
+          throw new Error('Invalid or expired token');
+        }
+      }
+    }
+
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    return this.authService.completeProfile(userId, completeProfileDto);
   }
 
   /**

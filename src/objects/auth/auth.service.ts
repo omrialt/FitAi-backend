@@ -21,6 +21,7 @@ export interface RegisterDto {
   fullName: string;
   gender: 'male' | 'female' | 'other';
   birthDate: string;
+  role: 'user' | 'trainer';
   height?: number;
 }
 
@@ -50,8 +51,16 @@ export interface UpdateProfileDto {
   profileImage?: string;
 }
 
+export interface CompleteProfileDto {
+  fullName: string;
+  gender: 'male' | 'female' | 'other';
+  birthDate: string;
+  role: 'user' | 'trainer';
+  height?: number;
+}
+
 export interface AuthResponse {
-  user: Omit<User, 'password'>;
+  user: Omit<User, 'password'> & { _id: string };
   tokens: {
     accessToken: string;
     refreshToken: string;
@@ -74,6 +83,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Check if user has password (Google OAuth users don't have passwords)
+    if (!user.password) {
+      throw new UnauthorizedException('Please login with Google');
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
@@ -87,7 +101,10 @@ export class AuthService {
     const { password: _, ...userObject } = user.toObject();
 
     return {
-      user: userObject,
+      user: {
+        ...userObject,
+        _id: user._id.toString(),
+      },
       tokens,
     };
   }
@@ -112,7 +129,6 @@ export class AuthService {
       email,
       password: hashedPassword,
       ...userData,
-      role: 'user', // Default role
     });
 
     // Generate tokens
@@ -122,7 +138,10 @@ export class AuthService {
     const { password: _, ...userObject } = user.toObject();
 
     return {
-      user: userObject,
+      user: {
+        ...userObject,
+        _id: user._id.toString(),
+      },
       tokens,
     };
   }
@@ -167,9 +186,8 @@ export class AuthService {
    */
   getGoogleAuthUrl(): string {
     const clientId = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id';
-    const redirectUri =
-      process.env.GOOGLE_CALLBACK_URL ||
-      'http://localhost:3000/auth/google/callback';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+    const redirectUri = `${backendUrl}/auth/google/callback`;
 
     const googleAuthUrl = new URL(
       'https://accounts.google.com/o/oauth2/v2/auth',
@@ -186,10 +204,122 @@ export class AuthService {
   /**
    * Handle Google OAuth callback
    */
-  handleGoogleCallback(code: string): Promise<AuthResponse> {
-    // TODO: Implement actual Google OAuth token exchange
-    // This is a placeholder implementation
-    throw new BadRequestException('Google OAuth not fully implemented yet');
+  async handleGoogleCallback(
+    code: string,
+  ): Promise<AuthResponse & { needsProfile?: boolean }> {
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const redirectUri = `${backendUrl}/auth/google/callback`;
+
+      if (!clientId || !clientSecret) {
+        throw new BadRequestException(
+          'Google OAuth credentials not configured',
+        );
+      }
+
+      // Exchange authorization code for tokens
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new BadRequestException('Failed to exchange authorization code');
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string;
+      };
+      const { access_token } = tokenData;
+
+      // Fetch user profile from Google
+      const profileResponse = await fetch(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        {
+          headers: {
+            Authorization: `Bearer ${access_token}`,
+          },
+        },
+      );
+
+      if (!profileResponse.ok) {
+        throw new BadRequestException('Failed to fetch user profile');
+      }
+
+      const profile = (await profileResponse.json()) as {
+        email?: string;
+        name?: string;
+        picture?: string;
+      };
+      const { email, name, picture } = profile;
+
+      if (!email) {
+        throw new BadRequestException('Email not provided by Google');
+      }
+
+      // Check if user exists
+      let user = await this.userModel.findOne({ email });
+      let needsProfile = false;
+
+      if (!user) {
+        // Create new user with Google OAuth
+        user = await this.userModel.create({
+          email,
+          fullName: name || email.split('@')[0],
+          authProvider: 'google',
+          avatarUrl: picture || '',
+          emailVerified: true,
+          // No password needed for Google OAuth users
+        });
+        needsProfile = true; // New user needs to complete profile
+      } else if (user.authProvider === 'email') {
+        // Link Google account to existing email account
+        user.authProvider = 'google';
+        user.avatarUrl = picture || user.avatarUrl;
+        user.emailVerified = true;
+        await user.save();
+      }
+
+      // Check if user needs to complete profile (missing required fields)
+      if (!user.gender || !user.birthDate || !user.role) {
+        needsProfile = true;
+      }
+
+      // Update last login
+      user.lastLogin = new Date();
+      await user.save();
+
+      // Generate tokens
+      const tokens = this.generateTokens(user._id.toString(), user.email);
+
+      // Remove password from response and ensure _id is included
+      const { password: _, ...userObject } = user.toObject();
+
+      return {
+        user: {
+          ...userObject,
+          _id: user._id.toString(),
+        },
+        tokens,
+        needsProfile,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Google OAuth authentication failed');
+    }
   }
 
   /**
@@ -222,6 +352,44 @@ export class AuthService {
   }
 
   /**
+   * Complete profile for Google OAuth users
+   */
+  async completeProfile(
+    userId: string,
+    completeData: CompleteProfileDto,
+  ): Promise<AuthResponse> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          fullName: completeData.fullName,
+          gender: completeData.gender,
+          birthDate: completeData.birthDate,
+          role: completeData.role,
+          height: completeData.height,
+        },
+        { new: true },
+      )
+      .select('-password');
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Generate new tokens with updated user info
+    const tokens = this.generateTokens(user._id.toString(), user.email);
+
+    const userObject = user.toObject();
+    return {
+      user: {
+        ...userObject,
+        _id: user._id.toString(),
+      },
+      tokens,
+    };
+  }
+
+  /**
    * Change password
    */
   async changePassword(
@@ -232,6 +400,11 @@ export class AuthService {
     const user = await this.userModel.findById(userId).select('+password');
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Check if user has password (Google OAuth users can't change password)
+    if (!user.password) {
+      throw new BadRequestException('Cannot change password for Google OAuth accounts');
     }
 
     // Verify old password

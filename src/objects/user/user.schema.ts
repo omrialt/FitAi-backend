@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { Schema, HydratedDocument, Model } from 'mongoose';
 
+// Interface for the document during validation
+interface UserDocumentForValidation {
+  authProvider: string;
+}
+
 // Define Zod enums
 export const userRoleSchema = z.enum(['user', 'trainer', 'admin']);
 export const authProviderSchema = z.enum(['email', 'google']);
@@ -22,10 +27,10 @@ export const userSchema = z.object({
     .email('Invalid email format'),
   password: z
     .string({
-      required_error: 'Password is required',
       invalid_type_error: 'Password must be a string',
     })
-    .min(6, 'Password must be at least 6 characters'),
+    .min(6, 'Password must be at least 6 characters')
+    .optional(),
   role: userRoleSchema.default('user'),
   authProvider: authProviderSchema.default('email'),
   gender: genderSchema.optional(),
@@ -57,7 +62,14 @@ export const UserSchema = new Schema(
       lowercase: true,
       trim: true,
     },
-    password: { type: String, required: true, select: false },
+    password: {
+      type: String,
+      required: function (this: UserDocumentForValidation) {
+        // Password only required for email auth provider
+        return this.authProvider === 'email';
+      },
+      select: false,
+    },
     role: {
       type: String,
       enum: ['user', 'trainer', 'admin'],
