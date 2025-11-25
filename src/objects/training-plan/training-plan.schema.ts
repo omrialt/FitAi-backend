@@ -24,10 +24,9 @@ export const sharedAccessEntrySchema = z.object({
 
 // Define WeightHistoryEntry schema
 export const weightHistoryEntrySchema = z.object({
-  date: z.date({
-    required_error: 'Date is required',
-    invalid_type_error: 'Date must be a valid date',
-  }),
+  date: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val)),
   weight: z
     .number({
       required_error: 'Weight is required',
@@ -102,17 +101,21 @@ export const trainingDaySchema = z.object({
     .int('Day of week must be an integer')
     .min(0, 'Day of week must be between 0 and 6')
     .max(6, 'Day of week must be between 0 and 6'),
-  plannedDate: z.date().optional(),
+  plannedDate: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+    .optional(),
   exercises: z.array(exerciseSchema).default([]),
 });
 
 // Define the main TrainingPlan schema
 export const trainingPlanSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
-  trainerId: z.string().optional().nullable(),
+  _id: z.union([z.string(), z.object({}).passthrough()]).optional(),
+  userId: z.union([z.string(), z.object({}).passthrough()]),
+  trainerId: z
+    .union([z.string(), z.object({}).passthrough()])
+    .optional()
+    .nullable(),
   title: z.string({
     required_error: 'Title is required',
     invalid_type_error: 'Title must be a string',
@@ -125,9 +128,22 @@ export const trainingPlanSchema = z.object({
   difficulty: difficultySchema.default('beginner'),
   sharedWith: z.array(z.string()).default([]),
   sharedAccess: z.array(sharedAccessEntrySchema).default([]),
+  // Clone tracking fields
+  initialParentId: z
+    .union([z.string(), z.object({}).passthrough()])
+    .optional()
+    .nullable(),
+  syncWithParent: z.boolean().default(false),
   // Lifecycle fields
-  startDate: z.date().optional(),
-  endDate: z.date().optional(),
+  startDate: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+    .optional(),
+  endDate: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+    .optional()
+    .nullable(),
   isActive: z.boolean().default(true),
   // Program meta fields
   programType: programTypeSchema.optional(),
@@ -135,7 +151,8 @@ export const trainingPlanSchema = z.object({
     .number()
     .int('Rotation cycle length must be an integer')
     .positive('Rotation cycle length must be positive')
-    .optional(),
+    .optional()
+    .nullable(),
   focus: z.string().optional(),
   estimatedDuration: z
     .number()
@@ -147,8 +164,14 @@ export const trainingPlanSchema = z.object({
     .int('Estimated calories must be an integer')
     .positive('Estimated calories must be positive')
     .optional(),
-  createdAt: z.date().optional(),
-  updatedAt: z.date().optional(),
+  createdAt: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+    .optional(),
+  updatedAt: z
+    .union([z.string(), z.date()])
+    .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+    .optional(),
 });
 
 // Create types from Zod schemas
@@ -247,6 +270,13 @@ export const TrainingPlanSchema = new Schema(
       ],
       default: [],
     },
+    // Clone tracking fields
+    initialParentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'TrainingPlan',
+      default: null,
+    },
+    syncWithParent: { type: Boolean, default: false },
     // Lifecycle fields
     startDate: { type: Date },
     endDate: { type: Date },
@@ -288,6 +318,8 @@ TrainingPlanSchema.index({ 'days.exercises.muscleGroup': 1 });
 TrainingPlanSchema.index({ sharedWith: 1 });
 TrainingPlanSchema.index({ 'sharedAccess.userId': 1 });
 TrainingPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
+TrainingPlanSchema.index({ initialParentId: 1 });
+TrainingPlanSchema.index({ initialParentId: 1, syncWithParent: 1 });
 // New indexes for added fields
 TrainingPlanSchema.index({ 'days.dayOfWeek': 1 });
 TrainingPlanSchema.index({ startDate: 1 });

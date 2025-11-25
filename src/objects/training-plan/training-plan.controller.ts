@@ -54,7 +54,7 @@ export class TrainingPlanController {
   }
 
   @Put(':id')
-  @Roles('trainer', 'admin')
+  @Roles('trainer', 'admin', 'user')
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(trainingPlanSchema.partial()))
@@ -88,5 +88,11 @@ export class TrainingPlanController {
     @Param('userId') userId: string,
   ) {
     return this.trainingPlanService.revokeShare(planId, userId);
+  }
+
+  @Get(':id/clones')
+  @Roles('user', 'trainer', 'admin')
+  async getChildClones(@Param('id') parentId: string) {
+    return this.trainingPlanService.getChildClones(parentId);
   }
 }
