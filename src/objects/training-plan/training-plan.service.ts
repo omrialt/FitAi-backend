@@ -79,8 +79,8 @@ export class TrainingPlanService {
     // Build filter based on user role
     let filter: Record<string, any> = {};
     if (userRole === 'admin') {
-      // Admin can see all plans
-      console.log('Admin user - fetching all training plans');
+      // Admin can see all parent plans (no clones)
+      filter = { initialParentId: { $exists: false } };
     } else if (userRole === 'trainer') {
       // Trainer can see plans they created or plans shared with them (their clones)
       filter = {
@@ -105,6 +105,8 @@ export class TrainingPlanService {
     const [plans, total] = await Promise.all([
       this.trainingPlanModel
         .find(filter)
+        .populate('trainerId', 'fullName email')
+        .populate('userId', 'fullName email')
         .sort(sortQuery)
         .skip(skip)
         .limit(limit)

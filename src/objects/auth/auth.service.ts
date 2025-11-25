@@ -358,7 +358,9 @@ export class AuthService {
 
     // Check if user has password (Google OAuth users can't change password)
     if (!user.password) {
-      throw new BadRequestException('Cannot change password for Google OAuth accounts');
+      throw new BadRequestException(
+        'Cannot change password for Google OAuth accounts',
+      );
     }
 
     // Verify old password
