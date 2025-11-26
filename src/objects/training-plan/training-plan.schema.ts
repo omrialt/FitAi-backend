@@ -14,10 +14,13 @@ export const programTypeSchema = z.enum(['fixedDays', 'rotation']);
 
 // Define SharedAccessEntry schema
 export const sharedAccessEntrySchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required for shared access',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required for shared access',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(), // Accepts ObjectId or any object
+  ]),
   accessLevel: accessLevelSchema,
   objectType: objectTypeSchema,
 });

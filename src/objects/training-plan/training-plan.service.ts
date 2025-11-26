@@ -27,9 +27,32 @@ export class TrainingPlanService {
 
   async create(data: Partial<TrainingPlan>): Promise<TrainingPlanDocument> {
     try {
-      const validatedData = validateData(trainingPlanSchema.partial(), data);
-      const plan = new this.trainingPlanModel(validatedData);
-      return await plan.save();
+      data.trainerId = data.userId;
+
+      const validatedData = validateData(trainingPlanSchema, data);
+      const safeData = structuredClone(validatedData);
+      const plan = new this.trainingPlanModel(safeData);
+
+      const savedPlan = await plan.save();
+
+      if (
+        data.sharedAccess &&
+        Array.isArray(data.sharedAccess) &&
+        data.sharedAccess.length > 0
+      ) {
+        const planId = getIdString(savedPlan._id);
+
+        await this.syncSharedAccess(
+          planId,
+          data.sharedAccess as Array<{
+            userId: string;
+            accessLevel: string;
+            objectType: string;
+          }>,
+        );
+      }
+
+      return savedPlan;
     } catch (error) {
       handleMongoError(error);
     }
@@ -108,7 +131,13 @@ export class TrainingPlanService {
 
       // Handle sharedAccess changes - create/update/delete clones
       if (data.sharedAccess) {
-        await this.syncSharedAccess(id, data.sharedAccess);
+        await this.syncSharedAccess(
+          id,
+          data.sharedAccess.map((sa) => ({
+            ...sa,
+            userId: getIdString(sa.userId),
+          })),
+        );
       }
 
       // If syncWithParent is enabled and this is a parent plan, sync to children

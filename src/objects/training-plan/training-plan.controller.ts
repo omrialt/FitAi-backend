@@ -26,11 +26,13 @@ import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
 export class TrainingPlanController {
   constructor(private readonly trainingPlanService: TrainingPlanService) {}
   @Post()
-  @Roles('trainer', 'admin') // Only trainers and admins can create plans
+  @Roles('trainer', 'admin', 'user')
   async create(
     @Body(new ZodValidationPipe(trainingPlanSchema.partial()))
     data: Partial<TrainingPlan>,
+    @Request() req: AuthRequest,
   ) {
+    data.userId = req.user.id;
     return this.trainingPlanService.create(data);
   }
 
@@ -70,7 +72,7 @@ export class TrainingPlanController {
   }
 
   @Post(':id/share')
-  @Roles('trainer', 'admin')
+  @Roles('trainer', 'admin', 'user')
   async sharePlan(
     @Param('id') planId: string,
     @Body() body: { userIds: string[] },
@@ -82,7 +84,7 @@ export class TrainingPlanController {
   }
 
   @Delete(':id/share/:userId')
-  @Roles('trainer', 'admin')
+  @Roles('trainer', 'admin', 'user')
   async revokeShare(
     @Param('id') planId: string,
     @Param('userId') userId: string,
