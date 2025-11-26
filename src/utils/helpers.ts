@@ -1,5 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcrypt';
+import { ObjectId } from 'mongodb';
+
+export function getIdString(Id: unknown): string {
+  if (Id instanceof ObjectId) return Id.toString();
+  if (typeof Id === 'string') return Id;
+  throw new Error('Invalid userId format');
+}
 
 export const generateUUID = (): string => uuidv4();
 

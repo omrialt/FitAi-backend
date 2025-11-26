@@ -18,6 +18,11 @@ import {
   CreatePhysicalDataDto,
   UpdatePhysicalDataDto,
 } from '../interfaces/physical-data.interfaces';
+import {
+  buildSortQuery,
+  validateData,
+  handleMongoError,
+} from '../../utils/mongo.helpers';
 
 @Injectable()
 export class PhysicalDataService {
@@ -26,21 +31,6 @@ export class PhysicalDataService {
     private physicalDataModel: Model<PhysicalDataDocument>,
   ) {}
 
-  private handleMongoError(error: unknown): never {
-    if (error instanceof Error) {
-      type MongoError = Error & { code?: number; name?: string };
-      const mongoError = error as MongoError;
-      if (mongoError.name === 'CastError') {
-        throw new BadRequestException('Invalid ID format');
-      }
-      if (mongoError.code === 11000) {
-        throw new BadRequestException(
-          'Physical data with this information already exists',
-        );
-      }
-    }
-    throw error;
-  }
 
   async create(
     createDto: CreatePhysicalDataDto,
@@ -52,7 +42,7 @@ export class PhysicalDataService {
       });
       return await physicalData.save();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -101,7 +91,7 @@ export class PhysicalDataService {
       }
       return physicalData;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -152,7 +142,7 @@ export class PhysicalDataService {
       }
       return physicalData;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 

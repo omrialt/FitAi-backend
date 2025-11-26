@@ -1,10 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, SortOrder } from 'mongoose';
+import { Model } from 'mongoose';
 import {
   TrainingPlan,
   TrainingPlanDocument,
@@ -14,9 +10,13 @@ import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-import { MongooseError } from '../interfaces/training-plan.interfaces';
 import { ObjectId } from 'mongodb';
-import { getIdString } from '../../common/helpers/getIdToString';
+import { getIdString } from '../../utils/helpers';
+import {
+  buildSortQuery,
+  validateData,
+  handleMongoError,
+} from '../../utils/mongo.helpers';
 
 @Injectable()
 export class TrainingPlanService {
@@ -25,45 +25,13 @@ export class TrainingPlanService {
     private trainingPlanModel: Model<TrainingPlanDocument>,
   ) {}
 
-  private buildSortQuery(
-    sort?: string,
-    order: 'asc' | 'desc' = 'asc',
-  ): { [key: string]: SortOrder } | undefined {
-    if (!sort) return undefined;
-    return { [sort]: order === 'asc' ? 1 : -1 };
-  }
-  private validateData(data: Partial<TrainingPlan>): Partial<TrainingPlan> {
-    const result = trainingPlanSchema.partial().safeParse(data);
-    if (!result.success) {
-      throw new BadRequestException(
-        result.error.errors.map((e) => e.message).join(', '),
-      );
-    }
-    return result.data as Partial<TrainingPlan>;
-  }
-
-  private handleMongoError(error: unknown): never {
-    if (error instanceof Error) {
-      const mongoError = error as MongooseError;
-      if (mongoError.name === 'CastError') {
-        throw new BadRequestException('Invalid ID format');
-      }
-      if (mongoError.code === 11000) {
-        throw new BadRequestException(
-          'Training plan with this name already exists',
-        );
-      }
-    }
-    throw error;
-  }
-
   async create(data: Partial<TrainingPlan>): Promise<TrainingPlanDocument> {
     try {
-      const validatedData = this.validateData(data);
+      const validatedData = validateData(trainingPlanSchema.partial(), data);
       const plan = new this.trainingPlanModel(validatedData);
       return await plan.save();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -74,7 +42,7 @@ export class TrainingPlanService {
   ): Promise<PaginatedResponse<TrainingPlan>> {
     const { page = 1, limit = 10, sort, order = 'asc' } = query;
     const skip = (page - 1) * limit;
-    const sortQuery = this.buildSortQuery(sort, order);
+    const sortQuery = buildSortQuery(sort, order);
 
     // Build filter based on user role
     let filter: Record<string, any> = {};
@@ -133,13 +101,13 @@ export class TrainingPlanService {
       if (!plan) throw new NotFoundException('Training plan not found');
       return plan.toObject();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
   async update(id: string, data: Partial<TrainingPlan>): Promise<TrainingPlan> {
     try {
-      const validatedData = this.validateData(data);
+      const validatedData = validateData(trainingPlanSchema.partial(), data);
       // Get the current plan before updating
       const currentPlan = await this.trainingPlanModel.findById(id).exec();
       if (!currentPlan) throw new NotFoundException('Training plan not found');
@@ -159,12 +127,12 @@ export class TrainingPlanService {
 
       // If syncWithParent is enabled and this is a parent plan, sync to children
       if (updated.syncWithParent !== false && !updated.initialParentId) {
-        await this.syncToChildren(id, validatedData);
+        await this.syncToChildren(id, updated.toObject());
       }
 
       return updated.toObject();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -298,7 +266,7 @@ export class TrainingPlanService {
       if (!deleted) throw new NotFoundException('Training plan not found');
       return { message: 'Training plan deleted successfully' };
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -315,7 +283,7 @@ export class TrainingPlanService {
         .exec();
       return plans.map((plan) => plan.toObject());
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -367,7 +335,7 @@ export class TrainingPlanService {
 
       return createdClones;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -386,7 +354,7 @@ export class TrainingPlanService {
       if (!plan) throw new NotFoundException('Training plan not found');
       return plan.toObject();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -405,7 +373,7 @@ export class TrainingPlanService {
         userIdStr === currentUserId || sharedWithIds.includes(currentUserId)
       );
     } catch (error) {
-      return false;
+      handleMongoError(error);
     }
   }
 
@@ -418,7 +386,7 @@ export class TrainingPlanService {
         .exec();
       return clones.map((clone) => clone.toObject());
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 }

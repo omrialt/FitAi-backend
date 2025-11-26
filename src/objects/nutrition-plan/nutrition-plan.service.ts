@@ -18,6 +18,11 @@ import {
   CreateNutritionPlanDto,
   UpdateNutritionPlanDto,
 } from '../interfaces/nutrition-plan.interfaces';
+import {
+  buildSortQuery,
+  validateData,
+  handleMongoError,
+} from '../../utils/mongo.helpers';
 
 @Injectable()
 export class NutritionPlanService {
@@ -51,7 +56,7 @@ export class NutritionPlanService {
       });
       return await plan.save();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -95,7 +100,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -120,7 +125,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -132,7 +137,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -176,7 +181,7 @@ export class NutritionPlanService {
         .sort({ createdAt: -1 })
         .exec();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -199,7 +204,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -222,7 +227,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -239,7 +244,7 @@ export class NutritionPlanService {
         userIdStr === currentUserId || sharedWithIds.includes(currentUserId)
       );
     } catch (error) {
-      return false;
+      handleMongoError(error);
     }
   }
 }

@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -18,6 +17,11 @@ import {
   CreateAiRecommendationDto,
   UpdateAiRecommendationDto,
 } from '../interfaces/ai-recommendation.interfaces';
+import {
+  buildSortQuery,
+  validateData,
+  handleMongoError,
+} from '../../utils/mongo.helpers';
 
 @Injectable()
 export class AiRecommendationService {
@@ -25,22 +29,6 @@ export class AiRecommendationService {
     @InjectModel('AiRecommendation')
     private aiRecommendationModel: Model<AiRecommendationDocument>,
   ) {}
-
-  private handleMongoError(error: unknown): never {
-    if (error instanceof Error) {
-      type MongoErrorLike = Error & { name?: string; code?: number | string };
-      const mongoError = error as MongoErrorLike;
-      if (mongoError.name === 'CastError') {
-        throw new BadRequestException('Invalid ID format');
-      }
-      if (mongoError.code === 11000) {
-        throw new BadRequestException(
-          'AI recommendation with this data already exists',
-        );
-      }
-    }
-    throw error;
-  }
 
   async create(
     createDto: CreateAiRecommendationDto,
@@ -52,7 +40,7 @@ export class AiRecommendationService {
       });
       return await recommendation.save();
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -98,7 +86,7 @@ export class AiRecommendationService {
       }
       return recommendation;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -148,7 +136,7 @@ export class AiRecommendationService {
       }
       return recommendation;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 
@@ -164,7 +152,7 @@ export class AiRecommendationService {
       }
       return recommendation;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 }
