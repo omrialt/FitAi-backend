@@ -11,6 +11,7 @@ import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.mod
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
+import { NodemailerModule } from './common/nodemailer/nodemailer.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
@@ -24,6 +25,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
       useFactory: () => getDatabaseConfig(),
     }),
     CloudinaryModule,
+    NodemailerModule,
     UserModule,
     AuthModule,
     TrainingPlanModule,

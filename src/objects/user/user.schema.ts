@@ -36,13 +36,18 @@ export const userSchema = z.object({
   gender: genderSchema.optional(),
   birthDate: z.date().optional(),
   height: z.number().positive('Height must be a positive number').optional(),
-  trainerId: z.string().optional().nullable(),
+  trainerId: z
+    .union([z.string(), z.object({}).passthrough()])
+    .optional()
+    .nullable(),
   avatarUrl: z.string().url('Invalid URL format').optional(),
   emailVerified: z.boolean().default(false),
   isActive: z.boolean().default(true),
   lastLogin: z.date().optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
+  resetPasswordToken: z.string().optional(),
+  resetPasswordExpires: z.date().optional(),
 });
 
 // Create types from Zod schema
@@ -91,6 +96,8 @@ export const UserSchema = new Schema(
     emailVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
   },
   {
     timestamps: true,

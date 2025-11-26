@@ -8,6 +8,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
+import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
+import { randomBytes } from 'crypto';
 import type { User } from '../user/user.schema';
 import {
   LoginDto,
@@ -23,7 +25,10 @@ import {
 
 @Injectable()
 export class AuthService {
-  constructor(@InjectModel('User') private readonly userModel: Model<User>) {}
+  constructor(
+    @InjectModel('User') private readonly userModel: Model<User>,
+    private readonly nodemailerService: NodemailerService,
+  ) {}
 
   /**
    * Login with email and password
@@ -385,17 +390,44 @@ export class AuthService {
       return;
     }
 
-    // TODO: Generate reset token and send email
-    // For now, just return success
-    console.log('Password reset requested for:', email);
+    // Generate a secure reset token
+    const token = randomBytes(32).toString('hex');
+    // Optionally: Save token and expiry to user document for later verification
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour expiry
+    await user.save();
+
+    // Send reset email
+    await this.nodemailerService.sendResetEmail('omrialt@gmail.com', token);
   }
 
   /**
    * Reset password with token
    */
-  resetPassword(token: string, newPassword: string): Promise<void> {
-    // TODO: Implement token verification and password reset
-    throw new BadRequestException('Password reset not fully implemented yet');
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    if (!token || !newPassword) {
+      throw new BadRequestException('Token and new password are required');
+    }
+
+    // Find user by reset token and check expiry
+    const user = await this.userModel
+      .findOne({
+        resetPasswordToken: token,
+        resetPasswordExpires: { $gt: new Date() },
+      })
+      .select('+password');
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    // Hash and set new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    // Clear reset token fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
   }
 
   /**
