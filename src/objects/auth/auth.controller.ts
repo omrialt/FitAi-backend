@@ -133,7 +133,6 @@ export class AuthController {
   @Get('profile')
   @UseGuards(AuthGuard('jwt'))
   async getProfile(@Request() req: AuthRequest) {
-    console.log('📝 Profile endpoint - req.user:', req.user);
     const userId = req.user?.id;
     if (!userId) {
       throw new Error('User ID is required');

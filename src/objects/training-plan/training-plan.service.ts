@@ -44,30 +44,20 @@ export class TrainingPlanService {
     const skip = (page - 1) * limit;
     const sortQuery = buildSortQuery(sort, order);
 
-    // Build filter based on user role
     let filter: Record<string, any> = {};
     if (userRole === 'admin') {
-      // Admin can see all parent plans (no clones)
       filter = { initialParentId: { $exists: false } };
     } else if (userRole === 'trainer') {
-      // Trainer can see plans they created or plans shared with them (their clones)
       filter = {
         $or: [
-          { trainerId: userId, initialParentId: { $exists: false } }, // Plans they created as trainer (parents only)
-          { userId: userId }, // Plans owned by them (includes clones they received)
+          { trainerId: userId, initialParentId: { $exists: false } },
+          { userId: userId },
         ],
       };
-      console.log(
-        'Trainer user - fetching plans created by or clones owned by:',
-        userId,
-      );
     } else {
-      // Regular user can see plans assigned to them (includes clones they received)
-      // Exclude plans where they are the original creator but it's a clone of someone else's plan
       filter = {
         userId: userId,
       };
-      console.log('Regular user - fetching plans owned by:', userId);
     }
 
     const [plans, total] = await Promise.all([
@@ -81,10 +71,6 @@ export class TrainingPlanService {
         .exec(),
       this.trainingPlanModel.countDocuments(filter),
     ]);
-
-    console.log(
-      `Found ${plans.length} training plans for user ${userId} (role: ${userRole})`,
-    );
 
     return {
       items: plans.map((plan) => plan.toObject()),
