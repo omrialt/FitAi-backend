@@ -156,7 +156,7 @@ export class PhysicalDataService {
       }
       return physicalData;
     } catch (error) {
-      this.handleMongoError(error);
+      handleMongoError(error);
     }
   }
 

@@ -95,4 +95,10 @@ export class TrainingPlanController {
   async getChildClones(@Param('id') parentId: string) {
     return this.trainingPlanService.getChildClones(parentId);
   }
+
+  @Delete(':id')
+  @Roles('trainer', 'admin', 'user')
+  async delete(@Param('id') id: string) {
+    return this.trainingPlanService.delete(id);
+  }
 }

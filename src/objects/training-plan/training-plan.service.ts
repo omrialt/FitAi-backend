@@ -262,8 +262,7 @@ export class TrainingPlanService {
 
   async delete(id: string): Promise<{ message: string }> {
     try {
-      const deleted = await this.trainingPlanModel.findByIdAndDelete(id).exec();
-      if (!deleted) throw new NotFoundException('Training plan not found');
+      await this.trainingPlanModel.findByIdAndDelete(id).exec();
       return { message: 'Training plan deleted successfully' };
     } catch (error) {
       handleMongoError(error);
