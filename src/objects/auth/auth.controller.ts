@@ -52,8 +52,8 @@ export class AuthController {
    * Logout user
    */
   @Post('logout')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  logout(@Request() req: { headers: { authorization?: string } }) {
+  @HttpCode(HttpStatus.OK)
+  async logout(@Request() req: { headers: { authorization?: string } }) {
     // Extract token from authorization header if needed
     const token: string | undefined = req.headers.authorization?.replace(
       'Bearer ',

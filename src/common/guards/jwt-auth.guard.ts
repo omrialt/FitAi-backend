@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  Inject,
 } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,7 +12,13 @@ import { JwtPayload, AuthRequest } from '../interfaces/auth.interfaces';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(@InjectModel('User') private readonly userModel: Model<any>) {}
+  constructor(
+    @InjectModel('User') private readonly userModel: Model<any>,
+    @Inject('TokenBlacklistService')
+    private readonly tokenBlacklistService?: {
+      isBlacklisted: (token: string) => Promise<boolean>;
+    },
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthRequest>();
@@ -22,6 +29,16 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const token = authHeader.substring(7);
+
+    // Check if token is blacklisted
+    if (this.tokenBlacklistService) {
+      const isBlacklisted =
+        await this.tokenBlacklistService.isBlacklisted(token);
+      if (isBlacklisted) {
+        console.log('🔐 JwtAuthGuard: Token is blacklisted');
+        throw new UnauthorizedException('Token has been revoked');
+      }
+    }
 
     try {
       const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';

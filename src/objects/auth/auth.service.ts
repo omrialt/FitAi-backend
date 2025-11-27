@@ -22,12 +22,14 @@ import {
   CompleteProfileDto,
   AuthResponse,
 } from '../interfaces/auth.interfaces';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel('User') private readonly userModel: Model<User>,
     private readonly nodemailerService: NodemailerService,
+    private readonly tokenBlacklistService: TokenBlacklistService,
   ) {}
 
   /**
@@ -107,11 +109,44 @@ export class AuthService {
 
   /**
    * Logout user
+   * Invalidates the current session by adding token to blacklist
    */
-  logout(token?: string): void {
-    // TODO: Implement token blacklisting if needed
-    // For now, client-side token removal is sufficient
-    return;
+  async logout(token?: string): Promise<{ message: string }> {
+    if (token) {
+      try {
+        // Verify the token to extract user information
+        const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';
+        const payload = jwt.verify(token, secret) as {
+          userId: string;
+          email: string;
+        };
+
+        // Update last logout time (optional - can be used for audit purposes)
+        await this.userModel.findByIdAndUpdate(payload.userId, {
+          lastLogout: new Date(),
+        });
+
+        // Add token to blacklist
+        const expiresAt = this.tokenBlacklistService.getTokenExpiration(token);
+        await this.tokenBlacklistService.addToBlacklist(
+          token,
+          expiresAt,
+          payload.userId,
+        );
+
+        console.log(`User ${payload.email} logged out successfully`);
+      } catch {
+        // If token is invalid or expired, still allow logout
+        // This ensures users can always logout even with corrupted tokens
+        console.log('Logout attempted with invalid/expired token');
+      }
+    }
+
+    // Client-side token removal is the primary logout mechanism
+    // The server confirms the logout action and blacklists the token
+    return {
+      message: 'Logout successful',
+    };
   }
 
   /**
@@ -397,7 +432,7 @@ export class AuthService {
     user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour expiry
     await user.save();
 
-    // Send reset email
+    // Send reset email TODO: Change email to user.email
     await this.nodemailerService.sendResetEmail('omrialt@gmail.com', token);
   }
 
