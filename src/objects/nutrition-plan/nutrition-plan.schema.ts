@@ -71,10 +71,13 @@ export const mealSchema = z.object({
 
 // Define the Rating schema
 export const ratingSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required for rating',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required for shared access',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(),
+  ]),
   rating: z
     .number({
       required_error: 'Rating is required',
@@ -141,7 +144,11 @@ export const NutritionPlanSchema = new Schema(
     title: { type: String, required: true },
     description: { type: String, required: true },
     totalCalories: { type: Number, required: true },
-    target: { type: String, enum: ['maintain', 'cut', 'bulk'], required: false },
+    target: {
+      type: String,
+      enum: ['maintain', 'cut', 'bulk'],
+      required: false,
+    },
     meals: {
       type: [
         {

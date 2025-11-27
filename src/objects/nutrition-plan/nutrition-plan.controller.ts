@@ -88,7 +88,10 @@ export class NutritionPlanController {
 
   @Post(':id/share')
   @Roles('trainer', 'admin', 'user')
-  async sharePlan(@Param('id') planId: string, @Body() body: { userIds: string[] }) {
+  async sharePlan(
+    @Param('id') planId: string,
+    @Body() body: { userIds: string[] },
+  ) {
     if (!body.userIds || !Array.isArray(body.userIds)) {
       throw new ForbiddenException('userIds array is required');
     }
@@ -97,7 +100,26 @@ export class NutritionPlanController {
 
   @Delete(':id/share/:userId')
   @Roles('trainer', 'admin', 'user')
-  async revokeShare(@Param('id') planId: string, @Param('userId') userId: string) {
+  async revokeShare(
+    @Param('id') planId: string,
+    @Param('userId') userId: string,
+  ) {
     return this.nutritionPlanService.revokeShare(planId, userId);
+  }
+
+  @Post(':id/ratings')
+  @Roles('user', 'trainer', 'admin')
+  async addRating(
+    @Param('id') planId: string,
+    @Body() body: { rating: number; comment?: string },
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user.id;
+    return await this.nutritionPlanService.addRating(
+      planId,
+      userId,
+      body.rating,
+      body.comment,
+    );
   }
 }

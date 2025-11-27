@@ -77,6 +77,7 @@ export class NutritionPlanService {
       const plan = await this.nutritionPlanModel
         .findById(id)
         .populate('userId', 'fullName email')
+        .populate('ratings.userId', 'fullName email')
         .exec();
       if (!plan) {
         throw new NotFoundException(`Nutrition plan with ID ${id} not found`);
@@ -217,6 +218,65 @@ export class NutritionPlanService {
       return (
         userIdStr === currentUserId || sharedAccessIds.includes(currentUserId)
       );
+    } catch (error) {
+      handleMongoError(error);
+    }
+  }
+
+  async addRating(
+    planId: string,
+    userId: string,
+    rating: number,
+    comment?: string,
+  ): Promise<NutritionPlanDocument> {
+    try {
+      const plan = await this.nutritionPlanModel
+        .findById(planId)
+        .populate('userId', 'fullName email')
+        .exec();
+
+      if (!plan) {
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found`,
+        );
+      }
+
+      // Check if user already rated this plan
+      const existingRatingIndex = plan.ratings.findIndex(
+        (r: any) => getIdString(r.userId) === userId,
+      );
+
+      if (existingRatingIndex > -1) {
+        // Update existing rating
+        plan.ratings[existingRatingIndex].rating = rating;
+        plan.ratings[existingRatingIndex].comment = comment;
+        plan.ratings[existingRatingIndex].createdAt = new Date();
+      } else {
+        // Add new rating
+        plan.ratings.push({
+          userId: new Types.ObjectId(userId) as any,
+          rating,
+          comment,
+          createdAt: new Date(),
+        });
+      }
+
+      await plan.save();
+
+      // Populate ratings with user info
+      const updatedPlan = await this.nutritionPlanModel
+        .findById(planId)
+        .populate('userId', 'fullName email')
+        .populate('ratings.userId', 'fullName email')
+        .exec();
+
+      if (!updatedPlan) {
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found after update`,
+        );
+      }
+
+      return updatedPlan;
     } catch (error) {
       handleMongoError(error);
     }
