@@ -1,28 +1,13 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  NutritionPlan,
-  NutritionPlanDocument,
-  Meal,
-} from './nutrition-plan.schema';
+import { NutritionPlan, NutritionPlanDocument } from './nutrition-plan.schema';
 import {
   PaginationDto,
   PaginatedResponse,
 } from '../../common/dto/pagination.dto';
-import {
-  CreateNutritionPlanDto,
-  UpdateNutritionPlanDto,
-} from '../interfaces/nutrition-plan.interfaces';
-import {
-  buildSortQuery,
-  validateData,
-  handleMongoError,
-} from '../../utils/mongo.helpers';
+import { handleMongoError } from '../../utils/mongo.helpers';
+import { getIdString } from 'src/utils/helpers';
 
 @Injectable()
 export class NutritionPlanService {
@@ -31,28 +16,11 @@ export class NutritionPlanService {
     private nutritionPlanModel: Model<NutritionPlanDocument>,
   ) {}
 
-  private handleMongoError(error: unknown): never {
-    if (error instanceof Error) {
-      const mongoError = error as { name?: string; code?: number };
-      if (mongoError.name === 'CastError') {
-        throw new BadRequestException('Invalid ID format');
-      }
-      if (mongoError.code === 11000) {
-        throw new BadRequestException(
-          'Nutrition plan with this data already exists',
-        );
-      }
-    }
-    throw error;
-  }
-
-  async create(
-    createDto: CreateNutritionPlanDto,
-  ): Promise<NutritionPlanDocument> {
+  async create(data: Partial<NutritionPlan>): Promise<NutritionPlanDocument> {
     try {
       const plan = new this.nutritionPlanModel({
-        ...createDto,
-        userId: new Types.ObjectId(createDto.userId),
+        ...data,
+        userId: getIdString(data.userId),
       });
       return await plan.save();
     } catch (error) {
@@ -62,6 +30,8 @@ export class NutritionPlanService {
 
   async findAll(
     query: Partial<PaginationDto> = {},
+    userId: string,
+    userRole: string,
   ): Promise<PaginatedResponse<NutritionPlan>> {
     const { page = 1, limit = 10, sort = 'createdAt', order = 'desc' } = query;
     const skip = (page - 1) * limit;
@@ -69,15 +39,28 @@ export class NutritionPlanService {
       [sort]: order === 'asc' ? (1 as const) : (-1 as const),
     };
 
+    let filter: Record<string, any> = {};
+    if (userRole === 'admin') {
+      filter = {};
+    } else if (userRole === 'trainer') {
+      filter = {
+        userId: new Types.ObjectId(userId),
+      };
+    } else {
+      filter = {
+        userId: new Types.ObjectId(userId),
+      };
+    }
+
     const [plans, total] = await Promise.all([
       this.nutritionPlanModel
-        .find()
+        .find(filter)
         .populate('userId', 'fullName email')
         .sort(sortQuery)
         .skip(skip)
         .limit(limit)
         .exec(),
-      this.nutritionPlanModel.countDocuments(),
+      this.nutritionPlanModel.countDocuments(filter),
     ]);
 
     return {
@@ -113,11 +96,14 @@ export class NutritionPlanService {
 
   async update(
     id: string,
-    updateDto: UpdateNutritionPlanDto,
+    data: Partial<NutritionPlan>,
   ): Promise<NutritionPlanDocument> {
     try {
       const plan = await this.nutritionPlanModel
-        .findByIdAndUpdate(id, updateDto, { new: true })
+        .findByIdAndUpdate(id, data, {
+          new: true,
+          runValidators: true,
+        })
         .populate('userId', 'fullName email')
         .exec();
       if (!plan) {
@@ -125,7 +111,7 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 
@@ -137,51 +123,27 @@ export class NutritionPlanService {
       }
       return plan;
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 
-  async calculateTotalCalories(meals: Meal[]): Promise<number> {
-    return meals.reduce((total, meal) => {
-      const mealCalories = meal.foods.reduce(
-        (sum, food) => sum + food.calories,
-        0,
-      );
-      return total + mealCalories;
-    }, 0);
-  }
-
-  async calculateMacros(
-    meals: Meal[],
-  ): Promise<{ protein: number; carbs: number; fat: number }> {
-    const totals = { protein: 0, carbs: 0, fat: 0 };
-
-    meals.forEach((meal) => {
-      meal.foods.forEach((food) => {
-        totals.protein += food.protein;
-        totals.carbs += food.carbs;
-        totals.fat += food.fat;
-      });
-    });
-
-    return totals;
-  }
-
-  async findByUserIdWithShared(userId: string): Promise<NutritionPlanDocument[]> {
+  async findByUserIdWithShared(
+    userId: string,
+  ): Promise<NutritionPlanDocument[]> {
     try {
       return await this.nutritionPlanModel
         .find({
           $or: [
             { userId: new Types.ObjectId(userId) },
-            { sharedWith: userId },
+            { 'sharedAccess.userId': new Types.ObjectId(userId) },
           ],
         })
         .populate('userId', 'fullName email')
-        .populate('sharedWith', 'fullName email')
+        .populate('sharedAccess.userId', 'fullName email')
         .sort({ createdAt: -1 })
         .exec();
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 
@@ -190,21 +152,29 @@ export class NutritionPlanService {
     userIds: string[],
   ): Promise<NutritionPlanDocument> {
     try {
+      const sharedAccessEntries = userIds.map((userId) => ({
+        userId: new Types.ObjectId(userId),
+        accessLevel: 'view',
+        objectType: 'nutritionPlan',
+      }));
+
       const plan = await this.nutritionPlanModel
         .findByIdAndUpdate(
           planId,
-          { $addToSet: { sharedWith: { $each: userIds } } },
+          { $addToSet: { sharedAccess: { $each: sharedAccessEntries } } },
           { new: true },
         )
         .populate('userId', 'fullName email')
-        .populate('sharedWith', 'fullName email')
+        .populate('sharedAccess.userId', 'fullName email')
         .exec();
       if (!plan) {
-        throw new NotFoundException(`Nutrition plan with ID ${planId} not found`);
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found`,
+        );
       }
       return plan;
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 
@@ -216,18 +186,20 @@ export class NutritionPlanService {
       const plan = await this.nutritionPlanModel
         .findByIdAndUpdate(
           planId,
-          { $pull: { sharedWith: userId } },
+          { $pull: { sharedAccess: { userId: new Types.ObjectId(userId) } } },
           { new: true },
         )
         .populate('userId', 'fullName email')
-        .populate('sharedWith', 'fullName email')
+        .populate('sharedAccess.userId', 'fullName email')
         .exec();
       if (!plan) {
-        throw new NotFoundException(`Nutrition plan with ID ${planId} not found`);
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found`,
+        );
       }
       return plan;
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 
@@ -238,10 +210,12 @@ export class NutritionPlanService {
     try {
       const plan = await this.nutritionPlanModel.findById(planId).exec();
       if (!plan) return false;
-      const userIdStr = plan.userId.toString();
-      const sharedWithIds = (plan.sharedWith || []).map((id) => id.toString());
+      const userIdStr = getIdString(plan.userId);
+      const sharedAccessIds = (plan.sharedAccess || []).map((entry) =>
+        getIdString(entry.userId),
+      );
       return (
-        userIdStr === currentUserId || sharedWithIds.includes(currentUserId)
+        userIdStr === currentUserId || sharedAccessIds.includes(currentUserId)
       );
     } catch (error) {
       handleMongoError(error);

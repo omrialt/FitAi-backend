@@ -3,64 +3,92 @@ import {
   Get,
   Post,
   Body,
-  Patch,
+  Put,
   Param,
   Delete,
   Query,
-  HttpCode,
-  HttpStatus,
+  UseGuards,
+  Request,
   ForbiddenException,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { NutritionPlanService } from './nutrition-plan.service';
-import type {
-  CreateNutritionPlanDto,
-  UpdateNutritionPlanDto,
-} from '../interfaces/nutrition-plan.interfaces';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
+import { paginationSchema } from '../../common/dto/pagination.dto';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
+  nutritionPlanSchema,
+  type NutritionPlan,
+} from './nutrition-plan.schema';
 
 @Controller('nutrition-plans')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 export class NutritionPlanController {
   constructor(private readonly nutritionPlanService: NutritionPlanService) {}
 
   @Post()
-  @HttpCode(HttpStatus.CREATED)
-  create(@Body() createDto: CreateNutritionPlanDto) {
-    return this.nutritionPlanService.create(createDto);
+  @Roles('trainer', 'admin', 'user')
+  async create(
+    @Body(new ZodValidationPipe(nutritionPlanSchema.partial()))
+    data: Partial<NutritionPlan>,
+    @Request() req: AuthRequest,
+  ) {
+    data.userId = req.user.id;
+    return this.nutritionPlanService.create(data);
   }
 
   @Get()
-  findAll(@Query() query: PaginationDto) {
-    return this.nutritionPlanService.findAll(query);
+  @Roles('user', 'trainer', 'admin')
+  async findAll(
+    @Request() req: AuthRequest,
+    @Query(new ZodValidationPipe(paginationSchema))
+    query: PaginationDto,
+  ) {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    return this.nutritionPlanService.findAll(query, userId, userRole);
   }
 
   @Get('user/:userId')
+  @Roles('user', 'trainer', 'admin')
   findByUserId(@Param('userId') userId: string) {
     return this.nutritionPlanService.findByUserId(userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  @Roles('user', 'trainer', 'admin')
+  async findOne(@Param('id') id: string) {
     return this.nutritionPlanService.findById(id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateDto: UpdateNutritionPlanDto) {
-    return this.nutritionPlanService.update(id, updateDto);
+  @Put(':id')
+  @Roles('trainer', 'admin', 'user')
+  async update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(nutritionPlanSchema.partial()))
+    data: Partial<NutritionPlan>,
+  ) {
+    return this.nutritionPlanService.update(id, data);
   }
 
   @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
+  @Roles('trainer', 'admin', 'user')
+  async delete(@Param('id') id: string) {
     return this.nutritionPlanService.remove(id);
   }
 
   @Get('user/:userId/with-shared')
-  findByUserWithShared(@Param('userId') userId: string) {
+  @Roles('user', 'trainer', 'admin')
+  async findByUserWithShared(@Param('userId') userId: string) {
     return this.nutritionPlanService.findByUserIdWithShared(userId);
   }
 
   @Post(':id/share')
-  sharePlan(@Param('id') planId: string, @Body() body: { userIds: string[] }) {
+  @Roles('trainer', 'admin', 'user')
+  async sharePlan(@Param('id') planId: string, @Body() body: { userIds: string[] }) {
     if (!body.userIds || !Array.isArray(body.userIds)) {
       throw new ForbiddenException('userIds array is required');
     }
@@ -68,10 +96,8 @@ export class NutritionPlanController {
   }
 
   @Delete(':id/share/:userId')
-  revokeShare(
-    @Param('id') planId: string,
-    @Param('userId') userId: string,
-  ) {
+  @Roles('trainer', 'admin', 'user')
+  async revokeShare(@Param('id') planId: string, @Param('userId') userId: string) {
     return this.nutritionPlanService.revokeShare(planId, userId);
   }
 }

@@ -9,10 +9,13 @@ export const objectTypeSchema = z.enum(['trainingPlan', 'nutritionPlan']);
 
 // Define SharedAccessEntry schema
 export const sharedAccessEntrySchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required for shared access',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required for shared access',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(), // Accepts ObjectId or any object
+  ]),
   accessLevel: accessLevelSchema,
   objectType: objectTypeSchema,
 });
@@ -23,12 +26,17 @@ export const foodSchema = z.object({
     required_error: 'Food name is required',
     invalid_type_error: 'Food name must be a string',
   }),
-  quantityGrams: z
+  quantity: z
     .number({
-      required_error: 'Quantity in grams is required',
       invalid_type_error: 'Quantity must be a number',
     })
-    .positive(),
+    .positive()
+    .optional()
+    .nullable(),
+  unit: z
+    .enum(['g', 'kg', 'ml', 'l', 'oz', 'lb', 'cup', 'tbsp', 'tsp', 'unit'])
+    .optional()
+    .nullable(),
   calories: z
     .number({
       required_error: 'Calories are required',
@@ -81,10 +89,7 @@ export const ratingSchema = z.object({
 
 // Define the Zod schema for validation
 export const nutritionPlanSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([z.string(), z.object({}).passthrough()]),
   title: z.string({
     required_error: 'Title is required',
     invalid_type_error: 'Title must be a string',
@@ -136,6 +141,7 @@ export const NutritionPlanSchema = new Schema(
     title: { type: String, required: true },
     description: { type: String, required: true },
     totalCalories: { type: Number, required: true },
+    target: { type: String, enum: ['maintain', 'cut', 'bulk'], required: false },
     meals: {
       type: [
         {
@@ -148,7 +154,23 @@ export const NutritionPlanSchema = new Schema(
             type: [
               {
                 name: { type: String, required: true },
-                quantityGrams: { type: Number, required: true },
+                quantity: { type: Number, required: false },
+                unit: {
+                  type: String,
+                  enum: [
+                    'g',
+                    'kg',
+                    'ml',
+                    'l',
+                    'oz',
+                    'lb',
+                    'cup',
+                    'tbsp',
+                    'tsp',
+                    'unit',
+                  ],
+                  required: false,
+                },
                 calories: { type: Number, required: true },
                 protein: { type: Number, required: true },
                 carbs: { type: Number, required: true },

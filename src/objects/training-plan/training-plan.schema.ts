@@ -257,6 +257,11 @@ export const TrainingPlanSchema = new Schema(
       enum: ['beginner', 'intermediate', 'advanced'],
       default: 'beginner',
     },
+    target: {
+      type: String,
+      enum: ['maintain', 'cut', 'bulk'],
+      required: false,
+    },
     sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     sharedAccess: {
       type: [
