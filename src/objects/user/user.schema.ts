@@ -10,6 +10,7 @@ interface UserDocumentForValidation {
 export const userRoleSchema = z.enum(['user', 'trainer', 'admin']);
 export const authProviderSchema = z.enum(['email', 'google']);
 export const genderSchema = z.enum(['male', 'female', 'other']);
+export const targetSchema = z.enum(['maintain', 'cut', 'bulk']);
 
 // Define the Zod schema for validation
 export const userSchema = z.object({
@@ -36,6 +37,7 @@ export const userSchema = z.object({
   gender: genderSchema.optional(),
   birthDate: z.date().optional(),
   height: z.number().positive('Height must be a positive number').optional(),
+  target: targetSchema.optional(),
   trainerId: z
     .union([z.string(), z.object({}).passthrough()])
     .optional()
@@ -56,6 +58,7 @@ export type User = z.infer<typeof userSchema>;
 export type UserRole = z.infer<typeof userRoleSchema>;
 export type AuthProvider = z.infer<typeof authProviderSchema>;
 export type Gender = z.infer<typeof genderSchema>;
+export type Target = z.infer<typeof targetSchema>;
 
 // Define Mongoose schema
 export const UserSchema = new Schema(
@@ -92,6 +95,10 @@ export const UserSchema = new Schema(
     },
     birthDate: { type: Date },
     height: { type: Number, min: 0 },
+    target: {
+      type: String,
+      enum: ['maintain', 'cut', 'bulk'],
+    },
     trainerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     avatarUrl: { type: String },
     emailVerified: { type: Boolean, default: false },

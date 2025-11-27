@@ -8,6 +8,7 @@ export const difficultySchema = z.enum([
   'intermediate',
   'advanced',
 ]);
+export const targetSchema = z.enum(['maintain', 'cut', 'bulk']);
 export const accessLevelSchema = z.enum(['view', 'edit']);
 export const objectTypeSchema = z.enum(['trainingPlan', 'nutritionPlan']);
 export const programTypeSchema = z.enum(['fixedDays', 'rotation']);
@@ -129,6 +130,7 @@ export const trainingPlanSchema = z.object({
   }),
   days: z.array(trainingDaySchema).default([]),
   difficulty: difficultySchema.default('beginner'),
+  target: targetSchema.optional(),
   sharedWith: z.array(z.string()).default([]),
   sharedAccess: z.array(sharedAccessEntrySchema).default([]),
   // Clone tracking fields
@@ -185,6 +187,7 @@ export type ExerciseSet = z.infer<typeof exerciseSetSchema>;
 export type WeightHistoryEntry = z.infer<typeof weightHistoryEntrySchema>;
 export type ExerciseType = z.infer<typeof exerciseTypeSchema>;
 export type Difficulty = z.infer<typeof difficultySchema>;
+export type Target = z.infer<typeof targetSchema>;
 export type SharedAccessEntry = z.infer<typeof sharedAccessEntrySchema>;
 export type AccessLevel = z.infer<typeof accessLevelSchema>;
 export type ObjectType = z.infer<typeof objectTypeSchema>;

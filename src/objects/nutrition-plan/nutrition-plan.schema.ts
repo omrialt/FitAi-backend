@@ -3,6 +3,7 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
 
 // Define Zod enums
 export const mealTypeSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
+export const targetSchema = z.enum(['maintain', 'cut', 'bulk']);
 export const accessLevelSchema = z.enum(['view', 'edit']);
 export const objectTypeSchema = z.enum(['trainingPlan', 'nutritionPlan']);
 
@@ -98,6 +99,7 @@ export const nutritionPlanSchema = z.object({
       invalid_type_error: 'Total calories must be a number',
     })
     .positive(),
+  target: targetSchema.optional(),
   meals: z.array(mealSchema).default([]),
   ratings: z.array(ratingSchema).default([]),
   averageRating: z.number().min(0).max(5).default(0),
@@ -114,6 +116,7 @@ export type Meal = z.infer<typeof mealSchema>;
 export type Food = z.infer<typeof foodSchema>;
 export type Rating = z.infer<typeof ratingSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
+export type Target = z.infer<typeof targetSchema>;
 export type SharedAccessEntry = z.infer<typeof sharedAccessEntrySchema>;
 export type AccessLevel = z.infer<typeof accessLevelSchema>;
 export type ObjectType = z.infer<typeof objectTypeSchema>;
