@@ -480,7 +480,7 @@ export class AuthService {
     const role = user?.role || 'user';
 
     const accessToken = jwt.sign({ userId, email, role }, accessSecret, {
-      expiresIn: '15m',
+      expiresIn: '7d',
     });
 
     const refreshToken = jwt.sign({ userId, email, role }, refreshSecret, {
