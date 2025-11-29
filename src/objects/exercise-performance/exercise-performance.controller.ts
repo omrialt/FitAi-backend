@@ -8,21 +8,27 @@ import {
   Put,
   Query,
   ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ExercisePerformanceService } from './exercise-performance.service';
 import type {
   CreateExercisePerformanceDto,
   UpdateExercisePerformanceDto,
 } from '../interfaces/exercise-performance.interfaces';
 import type { ExercisePerformance } from './exercise-performance.schema';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('performance')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 export class ExercisePerformanceController {
   constructor(
     private readonly exercisePerformanceService: ExercisePerformanceService,
   ) {}
 
   @Post()
+  @Roles('user', 'trainer', 'admin')
   async create(
     @Body(ValidationPipe) createData: CreateExercisePerformanceDto,
   ): Promise<ExercisePerformance> {
@@ -30,11 +36,13 @@ export class ExercisePerformanceController {
   }
 
   @Get()
+  @Roles('admin', 'trainer')
   async findAll(): Promise<ExercisePerformance[]> {
     return this.exercisePerformanceService.findAll();
   }
 
   @Get('user/:userId')
+  @Roles('user', 'trainer', 'admin')
   async findByUserId(
     @Param('userId') userId: string,
   ): Promise<ExercisePerformance[]> {
@@ -42,6 +50,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('exercise/:exerciseId')
+  @Roles('user', 'trainer', 'admin')
   async findByExerciseId(
     @Param('exerciseId') exerciseId: string,
   ): Promise<ExercisePerformance[]> {
@@ -49,6 +58,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('user/:userId/exercise/:exerciseId')
+  @Roles('user', 'trainer', 'admin')
   async findByUserAndExercise(
     @Param('userId') userId: string,
     @Param('exerciseId') exerciseId: string,
@@ -60,6 +70,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('training-plan/:trainingPlanId')
+  @Roles('user', 'trainer', 'admin')
   async findByTrainingPlan(
     @Param('trainingPlanId') trainingPlanId: string,
   ): Promise<ExercisePerformance[]> {
@@ -67,6 +78,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('user/:userId/exercise/:exerciseId/latest')
+  @Roles('user', 'trainer', 'admin')
   async getLatestPerformance(
     @Param('userId') userId: string,
     @Param('exerciseId') exerciseId: string,
@@ -78,6 +90,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('user/:userId/exercise/:exerciseId/history')
+  @Roles('user', 'trainer', 'admin')
   async getPerformanceHistory(
     @Param('userId') userId: string,
     @Param('exerciseId') exerciseId: string,
@@ -92,6 +105,7 @@ export class ExercisePerformanceController {
   }
 
   @Get('user/:userId/date-range')
+  @Roles('user', 'trainer', 'admin')
   async getPerformanceByDateRange(
     @Param('userId') userId: string,
     @Query('startDate') startDate: string,
@@ -105,11 +119,13 @@ export class ExercisePerformanceController {
   }
 
   @Get(':id')
+  @Roles('user', 'trainer', 'admin')
   async findById(@Param('id') id: string): Promise<ExercisePerformance> {
     return this.exercisePerformanceService.findById(id);
   }
 
   @Put(':id')
+  @Roles('user', 'trainer', 'admin')
   async update(
     @Param('id') id: string,
     @Body(ValidationPipe) updateData: UpdateExercisePerformanceDto,
@@ -118,6 +134,7 @@ export class ExercisePerformanceController {
   }
 
   @Delete(':id')
+  @Roles('user', 'trainer', 'admin')
   async delete(@Param('id') id: string): Promise<void> {
     return this.exercisePerformanceService.delete(id);
   }
