@@ -130,11 +130,14 @@ export class PhysicalDataService {
 
   async update(
     id: string,
-    updateDto: UpdatePhysicalDataDto,
+    data: Partial<PhysicalData>,
   ): Promise<PhysicalDataDocument> {
     try {
       const physicalData = await this.physicalDataModel
-        .findByIdAndUpdate(id, updateDto, { new: true })
+        .findByIdAndUpdate(id, data, {
+          new: true,
+          runValidators: true,
+        })
         .populate('userId', 'fullName email')
         .exec();
       if (!physicalData) {
@@ -142,7 +145,7 @@ export class PhysicalDataService {
       }
       return physicalData;
     } catch (error) {
-      handleMongoError(error);
+      return handleMongoError(error);
     }
   }
 

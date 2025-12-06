@@ -12,10 +12,13 @@ export const measurementsSchema = z.object({
 
 // Define the Zod schema for validation
 export const physicalDataSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required for shared access',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(), // Accepts ObjectId or any object
+  ]),
   heightCm: z
     .number({
       invalid_type_error: 'Height must be a number',

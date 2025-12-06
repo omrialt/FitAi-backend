@@ -95,8 +95,16 @@ export class PhysicalDataController {
 
   @Patch(':id')
   @Roles('user', 'trainer', 'admin')
-  update(@Param('id') id: string, @Body() updateDto: UpdatePhysicalDataDto) {
-    return this.physicalDataService.update(id, updateDto);
+  update(@Param('id') id: string, @Body() data: UpdatePhysicalDataDto) {
+    // Ensure we only pass the data fields, not any function properties
+    const updateData = {
+      ...(data.heightCm !== undefined && { heightCm: data.heightCm }),
+      ...(data.weightKg !== undefined && { weightKg: data.weightKg }),
+      ...(data.bodyFatPercent !== undefined && { bodyFatPercent: data.bodyFatPercent }),
+      ...(data.measurements !== undefined && { measurements: data.measurements }),
+      ...(data.dateRecorded !== undefined && { dateRecorded: data.dateRecorded }),
+    };
+    return this.physicalDataService.update(id, updateData);
   }
 
   @Delete(':id')
