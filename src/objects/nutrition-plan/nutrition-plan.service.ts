@@ -8,12 +8,14 @@ import {
 } from '../../common/dto/pagination.dto';
 import { handleMongoError } from '../../utils/mongo.helpers';
 import { getIdString } from 'src/utils/helpers';
+import { CurrentStatusService } from '../current-status/current-status.service';
 
 @Injectable()
 export class NutritionPlanService {
   constructor(
     @InjectModel('NutritionPlan')
     private nutritionPlanModel: Model<NutritionPlanDocument>,
+    private currentStatusService: CurrentStatusService,
   ) {}
 
   async create(data: Partial<NutritionPlan>): Promise<NutritionPlanDocument> {
@@ -56,6 +58,7 @@ export class NutritionPlanService {
       this.nutritionPlanModel
         .find(filter)
         .populate('userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .sort(sortQuery)
         .skip(skip)
         .limit(limit)
@@ -78,6 +81,7 @@ export class NutritionPlanService {
         .findById(id)
         .populate('userId', 'fullName email')
         .populate('ratings.userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .exec();
       if (!plan) {
         throw new NotFoundException(`Nutrition plan with ID ${id} not found`);
@@ -141,6 +145,7 @@ export class NutritionPlanService {
         })
         .populate('userId', 'fullName email')
         .populate('sharedAccess.userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .sort({ createdAt: -1 })
         .exec();
     } catch (error) {
@@ -167,6 +172,7 @@ export class NutritionPlanService {
         )
         .populate('userId', 'fullName email')
         .populate('sharedAccess.userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .exec();
       if (!plan) {
         throw new NotFoundException(
@@ -192,6 +198,7 @@ export class NutritionPlanService {
         )
         .populate('userId', 'fullName email')
         .populate('sharedAccess.userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .exec();
       if (!plan) {
         throw new NotFoundException(
@@ -243,7 +250,8 @@ export class NutritionPlanService {
 
       // Check if user already rated this plan
       const existingRatingIndex = plan.ratings.findIndex(
-        (r: any) => getIdString(r.userId) === userId,
+        (r: NutritionPlan['ratings'][number]) =>
+          getIdString(r.userId) === userId,
       );
 
       if (existingRatingIndex > -1) {
@@ -254,11 +262,11 @@ export class NutritionPlanService {
       } else {
         // Add new rating
         plan.ratings.push({
-          userId: new Types.ObjectId(userId) as any,
+          userId: userId,
           rating,
           comment,
           createdAt: new Date(),
-        });
+        } as NutritionPlan['ratings'][number]);
       }
 
       await plan.save();
@@ -268,6 +276,57 @@ export class NutritionPlanService {
         .findById(planId)
         .populate('userId', 'fullName email')
         .populate('ratings.userId', 'fullName email')
+        .exec();
+
+      if (!updatedPlan) {
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found after update`,
+        );
+      }
+
+      return updatedPlan;
+    } catch (error) {
+      handleMongoError(error);
+    }
+  }
+
+  async activateNutritionPlan(
+    planId: string,
+    userId: string,
+  ): Promise<NutritionPlanDocument> {
+    try {
+      const plan = await this.nutritionPlanModel.findById(planId).exec();
+
+      if (!plan) {
+        throw new NotFoundException(
+          `Nutrition plan with ID ${planId} not found`,
+        );
+      }
+
+      // Remove user from activeByUsers in all other plans
+      await this.nutritionPlanModel
+        .updateMany(
+          { activeByUsers: new Types.ObjectId(userId) },
+          { $pull: { activeByUsers: new Types.ObjectId(userId) } },
+        )
+        .exec();
+
+      // Add user to activeByUsers of the selected plan
+      if (!plan.activeByUsers.some((id) => getIdString(id) === userId)) {
+        plan.activeByUsers.push(new Types.ObjectId(userId) as any);
+        await plan.save();
+      }
+
+      // Update current status with activeMenuId
+      await this.currentStatusService.setActiveMenu(userId, {
+        activeMenuId: planId,
+      });
+
+      // Return populated plan
+      const updatedPlan = await this.nutritionPlanModel
+        .findById(planId)
+        .populate('userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .exec();
 
       if (!updatedPlan) {

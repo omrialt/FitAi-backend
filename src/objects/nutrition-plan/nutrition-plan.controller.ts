@@ -122,4 +122,17 @@ export class NutritionPlanController {
       body.comment,
     );
   }
+
+  @Post(':id/activate')
+  @Roles('user', 'trainer', 'admin')
+  async activateNutritionPlan(
+    @Param('id') planId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user.id;
+    return await this.nutritionPlanService.activateNutritionPlan(
+      planId,
+      userId,
+    );
+  }
 }

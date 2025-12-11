@@ -6,10 +6,13 @@ export const phaseSchema = z.enum(['cut', 'bulk', 'maintain']);
 
 // Define the Zod schema for validation
 export const currentStatusSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required for shared access',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(), // Accepts ObjectId or any object
+  ]),
   activeTrainingPlanId: z.string().optional().nullable(),
   activeMenuId: z.string().optional().nullable(),
   lastWorkoutDate: z.date().optional(),

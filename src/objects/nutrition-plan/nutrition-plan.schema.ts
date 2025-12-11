@@ -114,6 +114,9 @@ export const nutritionPlanSchema = z.object({
   totalRatings: z.number().int().nonnegative().default(0),
   sharedWith: z.array(z.string()).default([]),
   sharedAccess: z.array(sharedAccessEntrySchema).default([]),
+  activeByUsers: z
+    .array(z.union([z.string(), z.object({}).passthrough()]))
+    .default([]),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -215,6 +218,7 @@ export const NutritionPlanSchema = new Schema(
       ],
       default: [],
     },
+    activeByUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   },
   {
     timestamps: true,
@@ -234,6 +238,7 @@ NutritionPlanSchema.index({ 'ratings.createdAt': -1 });
 NutritionPlanSchema.index({ sharedWith: 1 });
 NutritionPlanSchema.index({ 'sharedAccess.userId': 1 });
 NutritionPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
+NutritionPlanSchema.index({ activeByUsers: 1 });
 
 // Add middleware to calculate average rating and total ratings
 NutritionPlanSchema.pre('save', function (next) {
