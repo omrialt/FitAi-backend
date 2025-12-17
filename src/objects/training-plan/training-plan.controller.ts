@@ -98,6 +98,19 @@ export class TrainingPlanController {
     return this.trainingPlanService.getChildClones(parentId);
   }
 
+  @Post(':id/activate')
+  @Roles('user', 'trainer', 'admin')
+  async activateTrainingPlan(
+    @Param('id') planId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user.id;
+    return await this.trainingPlanService.activateTrainingPlan(
+      planId,
+      userId,
+    );
+  }
+
   @Delete(':id')
   @Roles('trainer', 'admin', 'user')
   async delete(@Param('id') id: string) {

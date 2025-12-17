@@ -17,12 +17,14 @@ import {
   validateData,
   handleMongoError,
 } from '../../utils/mongo.helpers';
+import { CurrentStatusService } from '../current-status/current-status.service';
 
 @Injectable()
 export class TrainingPlanService {
   constructor(
     @InjectModel('TrainingPlan')
     private trainingPlanModel: Model<TrainingPlanDocument>,
+    private currentStatusService: CurrentStatusService,
   ) {}
 
   async create(data: Partial<TrainingPlan>): Promise<TrainingPlanDocument> {
@@ -88,6 +90,7 @@ export class TrainingPlanService {
         .find(filter)
         .populate('trainerId', 'fullName email')
         .populate('userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .sort(sortQuery)
         .skip(skip)
         .limit(limit)
@@ -106,7 +109,12 @@ export class TrainingPlanService {
 
   async findById(id: string): Promise<TrainingPlan> {
     try {
-      const plan = await this.trainingPlanModel.findById(id).exec();
+      const plan = await this.trainingPlanModel
+        .findById(id)
+        .populate('userId', 'fullName email')
+        .populate('trainerId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
+        .exec();
       if (!plan) throw new NotFoundException('Training plan not found');
       return plan.toObject();
     } catch (error) {
@@ -293,6 +301,7 @@ export class TrainingPlanService {
         .populate('userId', 'fullName email')
         .populate('trainerId', 'fullName email')
         .populate('sharedWith', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .sort({ createdAt: -1 })
         .exec();
       return plans.map((plan) => plan.toObject());
@@ -364,6 +373,7 @@ export class TrainingPlanService {
         .populate('userId', 'fullName email')
         .populate('trainerId', 'fullName email')
         .populate('sharedWith', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .exec();
       if (!plan) throw new NotFoundException('Training plan not found');
       return plan.toObject();
@@ -396,9 +406,66 @@ export class TrainingPlanService {
       const clones = await this.trainingPlanModel
         .find({ initialParentId: parentId })
         .populate('userId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
         .sort({ createdAt: -1 })
         .exec();
       return clones.map((clone) => clone.toObject());
+    } catch (error) {
+      handleMongoError(error);
+    }
+  }
+
+  async activateTrainingPlan(
+    planId: string,
+    userId: string,
+  ): Promise<TrainingPlan> {
+    try {
+      const plan = await this.trainingPlanModel.findById(planId).exec();
+
+      if (!plan) {
+        throw new NotFoundException(
+          `Training plan with ID ${planId} not found`,
+        );
+      }
+
+      // First, set isActive to false for all plans owned by this user
+      await this.trainingPlanModel
+        .updateMany({ userId: new ObjectId(userId) }, { $set: { isActive: false } })
+        .exec();
+
+      // Remove user from activeByUsers in ALL plans
+      await this.trainingPlanModel
+        .updateMany({}, { $pull: { activeByUsers: new ObjectId(userId) } })
+        .exec();
+
+      // Then set the selected plan as active and add user to activeByUsers
+      await this.trainingPlanModel
+        .findByIdAndUpdate(planId, {
+          $set: { isActive: true },
+          $addToSet: { activeByUsers: new ObjectId(userId) },
+        })
+        .exec();
+
+      // Update current status with activeTrainingPlanId
+      await this.currentStatusService.setActiveTrainingPlan(userId, {
+        activeTrainingPlanId: planId,
+      });
+
+      // Return populated plan
+      const updatedPlan = await this.trainingPlanModel
+        .findById(planId)
+        .populate('userId', 'fullName email')
+        .populate('trainerId', 'fullName email')
+        .populate('activeByUsers', 'fullName email')
+        .exec();
+
+      if (!updatedPlan) {
+        throw new NotFoundException(
+          `Training plan with ID ${planId} not found after update`,
+        );
+      }
+
+      return updatedPlan.toObject();
     } catch (error) {
       handleMongoError(error);
     }

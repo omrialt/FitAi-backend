@@ -303,19 +303,29 @@ export class NutritionPlanService {
         );
       }
 
-      // Remove user from activeByUsers in all other plans
+      // First, set isActive to false for all plans owned by this user
       await this.nutritionPlanModel
         .updateMany(
-          { activeByUsers: new Types.ObjectId(userId) },
+          { userId: new Types.ObjectId(userId) },
+          { $set: { isActive: false } },
+        )
+        .exec();
+
+      // Remove user from activeByUsers in ALL plans
+      await this.nutritionPlanModel
+        .updateMany(
+          {},
           { $pull: { activeByUsers: new Types.ObjectId(userId) } },
         )
         .exec();
 
-      // Add user to activeByUsers of the selected plan
-      if (!plan.activeByUsers.some((id) => getIdString(id) === userId)) {
-        plan.activeByUsers.push(new Types.ObjectId(userId) as any);
-        await plan.save();
-      }
+      // Then set the selected plan as active and add user to activeByUsers
+      await this.nutritionPlanModel
+        .findByIdAndUpdate(planId, {
+          $set: { isActive: true },
+          $addToSet: { activeByUsers: new Types.ObjectId(userId) },
+        })
+        .exec();
 
       // Update current status with activeMenuId
       await this.currentStatusService.setActiveMenu(userId, {

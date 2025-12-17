@@ -133,6 +133,9 @@ export const trainingPlanSchema = z.object({
   target: targetSchema.optional(),
   sharedWith: z.array(z.string()).default([]),
   sharedAccess: z.array(sharedAccessEntrySchema).default([]),
+  activeByUsers: z
+    .array(z.union([z.string(), z.object({}).passthrough()]))
+    .default([]),
   // Clone tracking fields
   initialParentId: z
     .union([z.string(), z.object({}).passthrough()])
@@ -281,6 +284,7 @@ export const TrainingPlanSchema = new Schema(
       ],
       default: [],
     },
+    activeByUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     // Clone tracking fields
     initialParentId: {
       type: Schema.Types.ObjectId,
@@ -329,6 +333,7 @@ TrainingPlanSchema.index({ 'days.exercises.muscleGroup': 1 });
 TrainingPlanSchema.index({ sharedWith: 1 });
 TrainingPlanSchema.index({ 'sharedAccess.userId': 1 });
 TrainingPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
+TrainingPlanSchema.index({ activeByUsers: 1 });
 TrainingPlanSchema.index({ initialParentId: 1 });
 TrainingPlanSchema.index({ initialParentId: 1, syncWithParent: 1 });
 // New indexes for added fields

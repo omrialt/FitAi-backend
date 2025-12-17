@@ -117,6 +117,7 @@ export const nutritionPlanSchema = z.object({
   activeByUsers: z
     .array(z.union([z.string(), z.object({}).passthrough()]))
     .default([]),
+  isActive: z.boolean().default(true),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -219,6 +220,7 @@ export const NutritionPlanSchema = new Schema(
       default: [],
     },
     activeByUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    isActive: { type: Boolean, default: true },
   },
   {
     timestamps: true,

@@ -6,6 +6,7 @@ import { TrainingPlanService } from './training-plan.service';
 import { TrainingPlanController } from './training-plan.controller';
 import { LoggerMiddleware } from '../../common/middleware/logger.middleware';
 import { AuthModule } from '../auth/auth.module';
+import { CurrentStatusModule } from '../current-status/current-status.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: 'User', schema: UserSchema }, // Add User model for JwtStrategy
     ]),
     AuthModule, // Import AuthModule to get JwtStrategy and PassportModule
+    CurrentStatusModule,
   ],
   controllers: [TrainingPlanController],
   providers: [TrainingPlanService],
