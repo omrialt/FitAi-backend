@@ -121,9 +121,16 @@ export class AuthController {
         : '/auth/google/callback';
 
       return res.redirect(`${frontendUrl}${redirectPath}?${params.toString()}`);
-    } catch {
+    } catch (error) {
+      console.error('Google OAuth authentication failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error details:', {
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+      const encodedError = encodeURIComponent(errorMessage);
+      return res.redirect(`${frontendUrl}/login?error=${encodedError}`);
     }
   }
 

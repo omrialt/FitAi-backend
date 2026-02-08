@@ -309,10 +309,16 @@ export class AuthService {
         needsProfile,
       };
     } catch (error) {
+      console.error('Google OAuth error details:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException('Google OAuth authentication failed');
+      // Log the full error for debugging
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `Google OAuth authentication failed: ${errorMessage}`,
+      );
     }
   }
 

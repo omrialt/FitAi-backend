@@ -51,6 +51,13 @@ export const userSchema = z.object({
   updatedAt: z.date().optional(),
   resetPasswordToken: z.string().optional(),
   resetPasswordExpires: z.date().optional(),
+  timezone: z.string().default('UTC'),
+  googleCalendar: z.object({
+    accessToken: z.string().optional(),
+    refreshToken: z.string().optional(),
+    expiryDate: z.number().optional(),
+    connected: z.boolean().default(false),
+  }).optional(),
 });
 
 // Create types from Zod schema
@@ -107,6 +114,13 @@ export const UserSchema = new Schema(
     lastLogout: { type: Date },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    timezone: { type: String, default: 'UTC' },
+    googleCalendar: {
+      accessToken: { type: String },
+      refreshToken: { type: String },
+      expiryDate: { type: Number },
+      connected: { type: Boolean, default: false },
+    },
   },
   {
     timestamps: true,

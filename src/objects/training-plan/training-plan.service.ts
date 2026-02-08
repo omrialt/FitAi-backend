@@ -430,7 +430,10 @@ export class TrainingPlanService {
 
       // First, set isActive to false for all plans owned by this user
       await this.trainingPlanModel
-        .updateMany({ userId: new ObjectId(userId) }, { $set: { isActive: false } })
+        .updateMany(
+          { userId: new ObjectId(userId) },
+          { $set: { isActive: false } },
+        )
         .exec();
 
       // Remove user from activeByUsers in ALL plans

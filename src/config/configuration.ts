@@ -21,6 +21,8 @@ export default () => ({
       '347313009031-r7l6g04p68vhklaoeg4e4kot6sd625v0.apps.googleusercontent.com',
     clientSecret:
       process.env.GOOGLE_CLIENT_SECRET || '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',
+    redirectUri:
+      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5173/auth/google/callback',
   },
   backendUrl: process.env.BACKEND_URL || 'http://localhost:3000',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
