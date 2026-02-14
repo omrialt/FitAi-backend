@@ -22,7 +22,7 @@ export default () => ({
     clientSecret:
       process.env.GOOGLE_CLIENT_SECRET || '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',
     redirectUri:
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5173/auth/google/callback',
+      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/calendar-sync/google/callback',
   },
   backendUrl: process.env.BACKEND_URL || 'http://localhost:3000',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',

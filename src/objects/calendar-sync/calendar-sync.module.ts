@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CalendarSyncService } from './calendar-sync.service';
 import { CalendarSyncController } from './calendar-sync.controller';
+import { CalendarSyncScheduler } from './calendar-sync.scheduler';
 import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
 import { UserSchema } from '../user/user.schema';
 import { GoogleCalendarModule } from '../../common/google-calendar/google-calendar.module';
@@ -23,6 +24,7 @@ import { TokenBlacklistSchema } from '../auth/token-blacklist.schema';
   controllers: [CalendarSyncController],
   providers: [
     CalendarSyncService,
+    CalendarSyncScheduler,
     JwtAuthGuard,
     {
       provide: 'TokenBlacklistService',

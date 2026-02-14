@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TrainingPlanSchema } from './training-plan.schema';
 import { UserSchema } from '../user/user.schema';
@@ -7,6 +7,7 @@ import { TrainingPlanController } from './training-plan.controller';
 import { LoggerMiddleware } from '../../common/middleware/logger.middleware';
 import { AuthModule } from '../auth/auth.module';
 import { CurrentStatusModule } from '../current-status/current-status.module';
+import { CalendarSyncModule } from '../calendar-sync/calendar-sync.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CurrentStatusModule } from '../current-status/current-status.module';
     ]),
     AuthModule, // Import AuthModule to get JwtStrategy and PassportModule
     CurrentStatusModule,
+    forwardRef(() => CalendarSyncModule),
   ],
   controllers: [TrainingPlanController],
   providers: [TrainingPlanService],

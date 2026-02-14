@@ -19,6 +19,7 @@ export interface CalendarEvent {
     private?: {
       trainingPlanId?: string;
       exerciseDay?: string;
+      eventKey?: string;
       syncedFromFitAi?: string;
     };
   };
@@ -53,7 +54,7 @@ export class GoogleCalendarService {
   /**
    * Generate OAuth URL for user authorization
    */
-  getAuthUrl(): string {
+  getAuthUrl(state?: string): string {
     const scopes = [
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/calendar.events',
@@ -63,6 +64,7 @@ export class GoogleCalendarService {
       access_type: 'offline',
       scope: scopes,
       prompt: 'consent',
+      state,
     });
   }
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -18,6 +18,7 @@ import {
   handleMongoError,
 } from '../../utils/mongo.helpers';
 import { CurrentStatusService } from '../current-status/current-status.service';
+import { CalendarSyncService } from '../calendar-sync/calendar-sync.service';
 
 @Injectable()
 export class TrainingPlanService {
@@ -25,6 +26,8 @@ export class TrainingPlanService {
     @InjectModel('TrainingPlan')
     private trainingPlanModel: Model<TrainingPlanDocument>,
     private currentStatusService: CurrentStatusService,
+    @Inject(forwardRef(() => CalendarSyncService))
+    private calendarSyncService: CalendarSyncService,
   ) {}
 
   async create(data: Partial<TrainingPlan>): Promise<TrainingPlanDocument> {
@@ -153,6 +156,9 @@ export class TrainingPlanService {
         await this.syncToChildren(id, updated.toObject());
       }
 
+      // Auto-sync to Google Calendar for users who have this plan active
+      this.triggerGoogleCalendarSync(id).catch(() => {});
+
       return updated.toObject();
     } catch (error) {
       handleMongoError(error);
@@ -280,6 +286,41 @@ export class TrainingPlanService {
     } catch (error) {
       console.error('Error syncing to children:', error);
       // Don't throw - parent update should succeed even if child sync fails
+    }
+  }
+
+  /**
+   * Trigger Google Calendar sync for all users who have the given plan
+   * (or its children) as their active plan. Fire-and-forget.
+   */
+  private async triggerGoogleCalendarSync(planId: string): Promise<void> {
+    try {
+      // Find the plan and its children
+      const plan = await this.trainingPlanModel.findById(planId).exec();
+      if (!plan) return;
+
+      // Collect user IDs from activeByUsers of this plan
+      const userIds = new Set<string>(
+        (plan.activeByUsers || []).map((uid) => getIdString(uid)),
+      );
+
+      // Also check children (coach scenario: parent update syncs to children)
+      const children = await this.trainingPlanModel
+        .find({ initialParentId: planId })
+        .exec();
+
+      for (const child of children) {
+        for (const uid of child.activeByUsers || []) {
+          userIds.add(getIdString(uid));
+        }
+      }
+
+      // Sync each affected user's calendar
+      for (const userId of userIds) {
+        await this.calendarSyncService.syncUserIfConnected(userId);
+      }
+    } catch (error) {
+      console.error('Auto Google Calendar sync failed:', error);
     }
   }
 
@@ -467,6 +508,9 @@ export class TrainingPlanService {
           `Training plan with ID ${planId} not found after update`,
         );
       }
+
+      // Auto-sync new active plan to Google Calendar
+      this.calendarSyncService.syncUserIfConnected(userId).catch(() => {});
 
       return updatedPlan.toObject();
     } catch (error) {

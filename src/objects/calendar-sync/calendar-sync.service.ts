@@ -7,7 +7,15 @@ import {
 } from '../../common/google-calendar/google-calendar.service';
 import { TrainingPlanDocument } from '../training-plan/training-plan.schema';
 import { UserDocument } from '../user/user.schema';
-import { addDays, startOfWeek, endOfWeek, format, parseISO } from 'date-fns';
+import {
+  addDays,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  parseISO,
+  format,
+} from 'date-fns';
 import { getIdString } from '../../utils/helpers';
 
 export interface SyncedCalendarEvent {
@@ -99,34 +107,37 @@ export class CalendarSyncService {
     const planId = getIdString(plan._id);
 
     if (plan.programType === 'fixedDays') {
-      // Fixed days program - map to specific days of week
-      plan.days.forEach((day, dayIndex) => {
-        const dayOfWeek = day.dayOfWeek; // 0 = Sunday, 6 = Saturday
-        let currentDate = startOfWeek(startDate, { weekStartsOn: 0 });
+      // Fixed days program - iterate each week in the range
+      let weekCursor = startOfWeek(startDate, { weekStartsOn: 0 });
 
-        // Add dayOfWeek to get the specific day
-        currentDate = addDays(currentDate, dayOfWeek);
+      while (weekCursor <= endDate) {
+        plan.days.forEach((day, dayIndex) => {
+          const dayOfWeek = day.dayOfWeek; // 0 = Sunday, 6 = Saturday
+          const eventDate = addDays(weekCursor, dayOfWeek);
 
-        if (currentDate >= startDate && currentDate <= endDate) {
-          const estimatedDuration = plan.estimatedDuration || 60; // Default 60 minutes
-          const startTime = new Date(currentDate);
-          startTime.setHours(9, 0, 0, 0); // Default 9 AM
+          if (eventDate >= startDate && eventDate <= endDate) {
+            const estimatedDuration = plan.estimatedDuration || 60;
+            const startTime = new Date(eventDate);
+            startTime.setHours(9, 0, 0, 0);
 
-          const endTime = new Date(startTime);
-          endTime.setMinutes(endTime.getMinutes() + estimatedDuration);
+            const endTime = new Date(startTime);
+            endTime.setMinutes(endTime.getMinutes() + estimatedDuration);
 
-          events.push({
-            title: day.dayName || `Training Day ${dayIndex + 1}`,
-            start: startTime,
-            end: endTime,
-            description: this.generateWorkoutDescription(day.exercises),
-            type: 'training',
-            trainingPlanId: planId,
-            dayIndex,
-            exercises: day.exercises,
-          });
-        }
-      });
+            events.push({
+              title: day.dayName || `Training Day ${dayIndex + 1}`,
+              start: startTime,
+              end: endTime,
+              description: this.generateWorkoutDescription(day.exercises),
+              type: 'training',
+              trainingPlanId: planId,
+              dayIndex,
+              exercises: day.exercises,
+            });
+          }
+        });
+
+        weekCursor = addDays(weekCursor, 7);
+      }
     } else if (plan.programType === 'rotation') {
       // Rotation program - cycle through days
       const cycleLength = plan.rotationCycleLength || plan.days.length;
@@ -222,7 +233,7 @@ export class CalendarSyncService {
   async syncTrainingPlanToGoogle(
     userId: string,
     trainingPlanId: string,
-    weekStart?: Date,
+    referenceDate?: Date,
   ): Promise<{ created: number; updated: number; deleted: number }> {
     const user = await this.userModel.findById(userId).exec();
     if (!user || !user.googleCalendar?.accessToken) {
@@ -240,15 +251,18 @@ export class CalendarSyncService {
       throw new NotFoundException('Training plan not found');
     }
 
-    const start = weekStart
-      ? startOfWeek(weekStart, { weekStartsOn: 0 })
-      : startOfWeek(new Date(), { weekStartsOn: 0 });
-    const end = endOfWeek(start, { weekStartsOn: 0 });
+    // Sync the full month — from start of first week to end of last week
+    // This ensures cross-month coverage (e.g. if month starts on Wed, you get Sun-Sat)
+    const refDate = referenceDate ?? new Date();
+    const monthStart = startOfMonth(refDate);
+    const monthEnd = endOfMonth(refDate);
+    const start = startOfWeek(monthStart, { weekStartsOn: 0 });
+    const end = endOfWeek(monthEnd, { weekStartsOn: 0 });
 
-    // Generate training events
+    // Generate training events for the entire range
     const trainingEvents = this.generateTrainingEvents(plan, start, end);
 
-    // Find existing synced events in Google Calendar
+    // Find existing synced events in Google Calendar for this range
     const existingSyncedEvents =
       (await this.googleCalendarService.findSyncedEvents(
         user.googleCalendar.accessToken,
@@ -262,17 +276,24 @@ export class CalendarSyncService {
     let updated = 0;
     let deleted = 0;
 
+    // Use event date + dayIndex as a unique key to avoid collisions across weeks
+    const eventKeys = new Set<string>();
+
     // Create or update events
     for (const trainingEvent of trainingEvents) {
+      const eventDateStr = format(trainingEvent.start, 'yyyy-MM-dd');
+      const eventKey = `${eventDateStr}_day${trainingEvent.dayIndex}`;
+      eventKeys.add(eventKey);
+
       const existingEvent = existingSyncedEvents.find(
-        (e) =>
-          e.extendedProperties?.private?.exerciseDay ===
-          trainingEvent.dayIndex?.toString(),
+        (e) => e.extendedProperties?.private?.eventKey === eventKey,
       );
 
       const calendarEvent: CalendarEvent = {
         summary: `🏋️ ${trainingEvent.title}`,
-        description: trainingEvent.description,
+        description: trainingEvent.description
+          ? `${trainingEvent.description}\n\n📱 Created with FitAi`
+          : '📱 Created with FitAi',
         start: {
           dateTime: trainingEvent.start.toISOString(),
           timeZone: user.timezone || 'UTC',
@@ -285,13 +306,13 @@ export class CalendarSyncService {
           private: {
             trainingPlanId,
             exerciseDay: trainingEvent.dayIndex?.toString(),
+            eventKey,
             syncedFromFitAi: 'true',
           },
         },
       };
 
       if (existingEvent && existingEvent.id) {
-        // Update existing event
         await this.googleCalendarService.updateEvent(
           user.googleCalendar.accessToken,
           user.googleCalendar.refreshToken,
@@ -300,7 +321,6 @@ export class CalendarSyncService {
         );
         updated++;
       } else {
-        // Create new event
         await this.googleCalendarService.createEvent(
           user.googleCalendar.accessToken,
           user.googleCalendar.refreshToken,
@@ -310,23 +330,108 @@ export class CalendarSyncService {
       }
     }
 
-    // Delete events that no longer exist in training plan
-    const trainingDayIndices = new Set(
-      trainingEvents.map((e) => e.dayIndex?.toString()),
-    );
+    // Delete events that no longer exist in the training plan for this range
     for (const existingEvent of existingSyncedEvents) {
-      const dayIndex = existingEvent.extendedProperties?.private?.exerciseDay;
-      if (!trainingDayIndices.has(dayIndex) && existingEvent.id) {
-        await this.googleCalendarService.deleteEvent(
-          user.googleCalendar.accessToken,
-          user.googleCalendar.refreshToken,
-          existingEvent.id,
-        );
-        deleted++;
+      const existingKey =
+        existingEvent.extendedProperties?.private?.eventKey ?? '';
+      if (!existingKey || !eventKeys.has(existingKey)) {
+        if (existingEvent.id) {
+          await this.googleCalendarService.deleteEvent(
+            user.googleCalendar.accessToken,
+            user.googleCalendar.refreshToken,
+            existingEvent.id,
+          );
+          deleted++;
+        }
       }
     }
 
     return { created, updated, deleted };
+  }
+
+  /**
+   * Sync all connected users' training plans to Google Calendar.
+   * Used by the monthly cron job and can be called manually.
+   */
+  async syncAllConnectedUsers(): Promise<{
+    total: number;
+    succeeded: number;
+    failed: number;
+  }> {
+    // Find all users with Google Calendar connected and a refresh token
+    const connectedUsers = await this.userModel
+      .find({
+        'googleCalendar.connected': true,
+        'googleCalendar.refreshToken': { $exists: true, $ne: null },
+      })
+      .exec();
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const user of connectedUsers) {
+      try {
+        const userId = getIdString(user._id);
+
+        // Find active training plan for this user
+        const activePlan = await this.trainingPlanModel
+          .findOne({ userId, isActive: true })
+          .exec();
+
+        if (!activePlan) {
+          continue; // Skip users without active training plans
+        }
+
+        const planId = getIdString(activePlan._id);
+        await this.syncTrainingPlanToGoogle(userId, planId);
+        succeeded++;
+      } catch (error) {
+        failed++;
+        console.error(
+          `Failed to sync Google Calendar for user ${getIdString(user._id)}:`,
+          error,
+        );
+      }
+    }
+
+    console.log(
+      `Monthly Google Calendar sync complete: ${succeeded} succeeded, ${failed} failed out of ${connectedUsers.length} connected users`,
+    );
+
+    return { total: connectedUsers.length, succeeded, failed };
+  }
+
+  /**
+   * Sync a single user's active training plan to Google Calendar if connected.
+   * Fire-and-forget safe — logs errors instead of throwing.
+   */
+  async syncUserIfConnected(userId: string): Promise<void> {
+    try {
+      const user = await this.userModel.findById(userId).exec();
+      if (
+        !user?.googleCalendar?.connected ||
+        !user.googleCalendar.accessToken ||
+        !user.googleCalendar.refreshToken
+      ) {
+        return; // Google Calendar not connected — nothing to do
+      }
+
+      const activePlan = await this.trainingPlanModel
+        .findOne({ userId, isActive: true })
+        .exec();
+
+      if (!activePlan) {
+        return; // No active plan
+      }
+
+      const planId = getIdString(activePlan._id);
+      await this.syncTrainingPlanToGoogle(userId, planId);
+    } catch (error) {
+      console.error(
+        `Auto-sync to Google Calendar failed for user ${userId}:`,
+        error,
+      );
+    }
   }
 
   /**

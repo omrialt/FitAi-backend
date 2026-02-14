@@ -6,6 +6,7 @@ import {
   Body,
   UseGuards,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -16,64 +17,83 @@ import { GoogleCalendarService } from '../../common/google-calendar/google-calen
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { UserDocument } from '../user/user.schema';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('calendar-sync')
-@UseGuards(JwtAuthGuard)
 export class CalendarSyncController {
   constructor(
     private readonly calendarSyncService: CalendarSyncService,
     private readonly googleCalendarService: GoogleCalendarService,
+    private readonly configService: ConfigService,
     @InjectModel('User')
     private userModel: Model<UserDocument>,
   ) {}
 
   /**
-   * Get Google Calendar OAuth URL
+   * Get Google Calendar OAuth URL - requires auth to get userId
    */
   @Get('google/auth-url')
-  getGoogleAuthUrl() {
-    const authUrl = this.googleCalendarService.getAuthUrl();
+  @UseGuards(JwtAuthGuard)
+  getGoogleAuthUrl(@Req() req: express.Request) {
+    const userId = req.user?.['id'] as string;
+    const authUrl = this.googleCalendarService.getAuthUrl(userId);
     return { authUrl };
   }
 
   /**
-   * Handle Google OAuth callback
+   * Handle Google OAuth callback - called by Google, no JWT auth
+   * Google redirects here with ?code=...&state=userId
    */
-  @Post('google/callback')
-  @HttpCode(HttpStatus.OK)
+  @Get('google/callback')
   async handleGoogleCallback(
-    @Req() req: express.Request,
-    @Body('code') code: string,
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Res() res: express.Response,
   ) {
-    const userId = req.user?.['userId'] as string;
+    const frontendUrl =
+      this.configService.get<string>('frontendUrl') || 'http://localhost:5173';
 
-    // Exchange code for tokens
-    const tokens = await this.googleCalendarService.getTokensFromCode(code);
+    if (error) {
+      return res.redirect(
+        `${frontendUrl}/schedule?calendar_error=${encodeURIComponent(error)}`,
+      );
+    }
 
-    // Save tokens to user document
-    await this.userModel
-      .findByIdAndUpdate(userId, {
-        googleCalendar: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiryDate: tokens.expiryDate,
-          connected: true,
-        },
-      })
-      .exec();
+    try {
+      const userId = state;
 
-    return {
-      message: 'Google Calendar connected successfully',
-      connected: true,
-    };
+      // Exchange code for tokens
+      const tokens = await this.googleCalendarService.getTokensFromCode(code);
+
+      // Save tokens to user document
+      await this.userModel
+        .findByIdAndUpdate(userId, {
+          googleCalendar: {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiryDate: tokens.expiryDate,
+            connected: true,
+          },
+        })
+        .exec();
+
+      return res.redirect(`${frontendUrl}/schedule?calendar_connected=true`);
+    } catch (err) {
+      console.error('Google Calendar callback error:', err);
+      return res.redirect(
+        `${frontendUrl}/schedule?calendar_error=connection_failed`,
+      );
+    }
   }
 
   /**
    * Get connection status
    */
   @Get('google/status')
+  @UseGuards(JwtAuthGuard)
   async getConnectionStatus(@Req() req: express.Request) {
-    const userId = req.user?.['userId'] as string;
+    const userId = req.user?.['id'] as string;
     const user = await this.userModel.findById(userId).exec();
 
     return {
@@ -86,9 +106,10 @@ export class CalendarSyncController {
    * Disconnect Google Calendar
    */
   @Post('google/disconnect')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async disconnectGoogle(@Req() req: express.Request) {
-    const userId = req.user?.['userId'] as string;
+    const userId = req.user?.['id'] as string;
     await this.calendarSyncService.disconnectGoogleCalendar(userId);
 
     return { message: 'Google Calendar disconnected successfully' };
@@ -98,6 +119,7 @@ export class CalendarSyncController {
    * Get weekly calendar view (merged training + Google events)
    */
   @Get('weekly')
+  @UseGuards(JwtAuthGuard)
   async getWeeklyCalendar(
     @Req() req: express.Request,
     @Query('weekStart') weekStart?: string,
@@ -117,19 +139,20 @@ export class CalendarSyncController {
    * Sync training plan to Google Calendar
    */
   @Post('sync-training-plan')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async syncTrainingPlan(
     @Req() req: express.Request,
     @Body('trainingPlanId') trainingPlanId: string,
-    @Body('weekStart') weekStart?: string,
+    @Body('referenceDate') referenceDate?: string,
   ) {
-    const userId = req.user?.['userId'] as string;
-    const startDate = weekStart ? new Date(weekStart) : undefined;
+    const userId = req.user?.['id'] as string;
+    const refDate = referenceDate ? new Date(referenceDate) : undefined;
 
     const result = await this.calendarSyncService.syncTrainingPlanToGoogle(
       userId,
       trainingPlanId,
-      startDate,
+      refDate,
     );
 
     return {
