@@ -1,4 +1,4 @@
-import { Measurements } from '../physical-data/physical-data.schema';
+import { Measurements } from '../objects/physical-data/physical-data.schema';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreatePhysicalDataDto {

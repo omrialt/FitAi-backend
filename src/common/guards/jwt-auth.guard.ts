@@ -8,7 +8,7 @@ import {
 import * as jwt from 'jsonwebtoken';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { JwtPayload, AuthRequest } from '../interfaces/auth.interfaces';
+import { JwtPayload, AuthRequest } from '../../interfaces/jwt.interfaces';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {

@@ -23,8 +23,8 @@ import type {
   ResetPasswordDto,
   UpdateProfileDto,
   CompleteProfileDto,
-} from '../interfaces/auth.interfaces';
-import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
+} from '../../interfaces/auth.interfaces';
+import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
 @Controller('auth')
 export class AuthController {

@@ -1,4 +1,4 @@
-import { Meal } from '../nutrition-plan/nutrition-plan.schema';
+import { Meal } from '../objects/nutrition-plan/nutrition-plan.schema';
 
 export class CreateNutritionPlanDto {
   userId!: string;

@@ -1,4 +1,4 @@
-import type { User } from '../user/user.schema';
+import type { User } from '../objects/user/user.schema';
 
 export interface LoginDto {
   email: string;

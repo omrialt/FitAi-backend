@@ -6,7 +6,7 @@ import * as bcrypt from 'bcrypt';
 import {
   CreateUserDto,
   UpdateUserDto,
-} from '../interfaces/user.interfaces';
+} from '../../interfaces/user.interfaces';
 
 @Injectable()
 export class UserService {

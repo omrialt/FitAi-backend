@@ -6,7 +6,7 @@ import {
   ProgressStatsDocument,
   PeriodStats,
 } from './progress-stats.schema';
-import { UpdateProgressStatsDto } from '../interfaces/progress-stats.interfaces';
+import { UpdateProgressStatsDto } from '../../interfaces/progress-stats.interfaces';
 
 @Injectable()
 export class ProgressStatsService {

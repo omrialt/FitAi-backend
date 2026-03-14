@@ -21,7 +21,7 @@ import {
   UpdateProfileDto,
   CompleteProfileDto,
   AuthResponse,
-} from '../interfaces/auth.interfaces';
+} from '../../interfaces/auth.interfaces';
 import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()

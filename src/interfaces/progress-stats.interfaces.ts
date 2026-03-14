@@ -1,4 +1,4 @@
-import { PeriodStats } from '../progress-stats/progress-stats.schema';
+import { PeriodStats } from '../objects/progress-stats/progress-stats.schema';
 
 export interface UpdateProgressStatsDto {
   last7Days?: PeriodStats;

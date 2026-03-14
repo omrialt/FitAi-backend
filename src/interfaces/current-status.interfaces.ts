@@ -1,4 +1,4 @@
-import { Phase } from '../current-status/current-status.schema';
+import { Phase } from '../objects/current-status/current-status.schema';
 
 export interface UpdateCurrentStatusDto {
   activeTrainingPlanId?: string | null;

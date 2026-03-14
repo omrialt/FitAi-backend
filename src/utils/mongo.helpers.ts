@@ -1,10 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { SortOrder } from 'mongoose';
 import { ZodSchema } from 'zod';
-
-export interface MongooseError extends Error {
-  code?: number;
-}
+import { MongooseError } from '../interfaces/mongo.interfaces';
 
 /**
  * Builds a sort query object for MongoDB from sort field and order
