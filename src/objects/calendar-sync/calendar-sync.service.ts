@@ -3,8 +3,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   GoogleCalendarService,
-  CalendarEvent,
 } from '../../common/google-calendar/google-calendar.service';
+import { CalendarEvent } from '../../interfaces/calendar.interfaces';
+import { SyncedCalendarEvent } from '../../interfaces/calendar-sync.interfaces';
 import { TrainingPlanDocument } from '../training-plan/training-plan.schema';
 import { UserDocument } from '../user/user.schema';
 import {
@@ -17,19 +18,6 @@ import {
   format,
 } from 'date-fns';
 import { getIdString } from '../../utils/helpers';
-
-export interface SyncedCalendarEvent {
-  id?: string;
-  title: string;
-  start: Date;
-  end: Date;
-  description?: string;
-  type: 'training' | 'google';
-  trainingPlanId?: string;
-  dayIndex?: number;
-  googleEventId?: string;
-  exercises?: any[];
-}
 
 @Injectable()
 export class CalendarSyncService {

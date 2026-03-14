@@ -16,7 +16,7 @@ import { AiRecommendationService } from './ai-recommendation.service';
 import type {
   CreateAiRecommendationDto,
   UpdateAiRecommendationDto,
-} from '../interfaces/ai-recommendation.interfaces';
+} from '../../interfaces/ai-recommendation.interfaces';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import type { RecommendationCategory } from './ai-recommendation.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';

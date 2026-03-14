@@ -2,28 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { google } from 'googleapis';
 import { OAuth2Client, OAuth2ClientOptions } from 'google-auth-library';
 import { ConfigService } from '@nestjs/config';
-
-export interface CalendarEvent {
-  id?: string;
-  summary: string;
-  description?: string;
-  start: {
-    dateTime: string;
-    timeZone: string;
-  };
-  end: {
-    dateTime: string;
-    timeZone: string;
-  };
-  extendedProperties?: {
-    private?: {
-      trainingPlanId?: string;
-      exerciseDay?: string;
-      eventKey?: string;
-      syncedFromFitAi?: string;
-    };
-  };
-}
+import { CalendarEvent } from '../../interfaces/calendar.interfaces';
 
 @Injectable()
 export class GoogleCalendarService {

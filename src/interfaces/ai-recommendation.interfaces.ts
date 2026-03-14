@@ -1,4 +1,4 @@
-import { RecommendationCategory } from '../ai-recommendation/ai-recommendation.schema';
+import { RecommendationCategory } from '../objects/ai-recommendation/ai-recommendation.schema';
 
 export class CreateAiRecommendationDto {
   userId!: string;

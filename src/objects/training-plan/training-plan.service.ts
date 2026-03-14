@@ -6,10 +6,8 @@ import {
   TrainingPlanDocument,
   trainingPlanSchema,
 } from './training-plan.schema';
-import {
-  PaginationDto,
-  PaginatedResponse,
-} from '../../common/dto/pagination.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginatedResponse } from '../../interfaces/pagination.interfaces';
 import { ObjectId } from 'mongodb';
 import { getIdString } from '../../utils/helpers';
 import {

@@ -2,10 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { NutritionPlan, NutritionPlanDocument } from './nutrition-plan.schema';
-import {
-  PaginationDto,
-  PaginatedResponse,
-} from '../../common/dto/pagination.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginatedResponse } from '../../interfaces/pagination.interfaces';
 import { handleMongoError } from '../../utils/mongo.helpers';
 import { getIdString } from 'src/utils/helpers';
 import { CurrentStatusService } from '../current-status/current-status.service';

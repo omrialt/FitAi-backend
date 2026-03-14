@@ -17,7 +17,7 @@ import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import type { AuthRequest } from '../../common/interfaces/auth.interfaces';
+import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   nutritionPlanSchema,

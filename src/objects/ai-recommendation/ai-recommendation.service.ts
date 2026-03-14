@@ -9,14 +9,12 @@ import {
   AiRecommendationDocument,
   RecommendationCategory,
 } from './ai-recommendation.schema';
-import {
-  PaginationDto,
-  PaginatedResponse,
-} from '../../common/dto/pagination.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginatedResponse } from '../../interfaces/pagination.interfaces';
 import {
   CreateAiRecommendationDto,
   UpdateAiRecommendationDto,
-} from '../interfaces/ai-recommendation.interfaces';
+} from '../../interfaces/ai-recommendation.interfaces';
 import {
   buildSortQuery,
   validateData,

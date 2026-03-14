@@ -18,7 +18,7 @@ import {
 import type {
   CreatePhysicalDataDto,
   UpdatePhysicalDataDto,
-} from '../interfaces/physical-data.interfaces';
+} from '../../interfaces/physical-data.interfaces';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';

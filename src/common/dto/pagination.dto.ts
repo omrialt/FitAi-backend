@@ -23,11 +23,3 @@ export const paginationSchema = z
   });
 
 export type PaginationDto = z.infer<typeof paginationSchema>;
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  limit: number;
-  pages: number;
-}

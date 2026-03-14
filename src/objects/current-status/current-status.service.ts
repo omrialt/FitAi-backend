@@ -11,7 +11,7 @@ import {
   SetActiveTrainingPlanDto,
   SetActiveMenuDto,
   SetPhaseDto,
-} from '../interfaces/current-status.interfaces';
+} from '../../interfaces/current-status.interfaces';
 
 @Injectable()
 export class CurrentStatusService {

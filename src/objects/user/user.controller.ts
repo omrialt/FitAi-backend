@@ -15,7 +15,7 @@ import { UserService } from './user.service';
 import type {
   CreateUserDto,
   UpdateUserDto,
-} from '../interfaces/user.interfaces';
+} from '../../interfaces/user.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 

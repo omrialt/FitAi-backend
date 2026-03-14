@@ -1,4 +1,4 @@
-import { Exercise } from '../training-plan/training-plan.schema';
+import { Exercise } from '../objects/training-plan/training-plan.schema';
 
 export class CreateTrainingPlanDto {
   userId!: string;
@@ -15,9 +15,4 @@ export class UpdateTrainingPlanDto {
   durationWeeks?: number;
   exercises?: Exercise[];
   difficulty?: string;
-}
-
-export interface MongooseError extends Error {
-  code?: number;
-  name: string;
 }

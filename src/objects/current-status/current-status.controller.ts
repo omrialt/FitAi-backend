@@ -14,7 +14,7 @@ import type {
   SetActiveTrainingPlanDto,
   SetActiveMenuDto,
   SetPhaseDto,
-} from '../interfaces/current-status.interfaces';
+} from '../../interfaces/current-status.interfaces';
 import type { CurrentStatus } from './current-status.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';

@@ -10,14 +10,12 @@ import {
   PhysicalDataDocument,
   Measurements,
 } from './physical-data.schema';
-import {
-  PaginationDto,
-  PaginatedResponse,
-} from '../../common/dto/pagination.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PaginatedResponse } from '../../interfaces/pagination.interfaces';
 import {
   CreatePhysicalDataDto,
   UpdatePhysicalDataDto,
-} from '../interfaces/physical-data.interfaces';
+} from '../../interfaces/physical-data.interfaces';
 import {
   buildSortQuery,
   validateData,
