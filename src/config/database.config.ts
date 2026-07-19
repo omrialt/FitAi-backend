@@ -1,7 +1,7 @@
 import { MongooseModuleOptions } from '@nestjs/mongoose';
 
 export const getDatabaseConfig = (): MongooseModuleOptions => {
-  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/fitai';
+  const mongoUri = process.env.MONGO_URI!;
   
   console.log('🔧 Database Configuration');
   console.log(

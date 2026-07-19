@@ -66,16 +66,18 @@ export class CalendarSyncController {
       // Exchange code for tokens
       const tokens = await this.googleCalendarService.getTokensFromCode(code);
 
-      // Save tokens to user document
+      // Save tokens to user document — use $set with dot-notation so we never
+      // overwrite an existing refreshToken when Google omits it in the response.
+      const updateFields: Record<string, unknown> = {
+        'googleCalendar.accessToken': tokens.accessToken,
+        'googleCalendar.expiryDate': tokens.expiryDate,
+        'googleCalendar.connected': true,
+      };
+      if (tokens.refreshToken) {
+        updateFields['googleCalendar.refreshToken'] = tokens.refreshToken;
+      }
       await this.userModel
-        .findByIdAndUpdate(userId, {
-          googleCalendar: {
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            expiryDate: tokens.expiryDate,
-            connected: true,
-          },
-        })
+        .findByIdAndUpdate(userId, { $set: updateFields })
         .exec();
 
       return res.redirect(`${frontendUrl}/schedule?calendar_connected=true`);

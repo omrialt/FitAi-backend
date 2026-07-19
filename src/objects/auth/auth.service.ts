@@ -115,7 +115,7 @@ export class AuthService {
     if (token) {
       try {
         // Verify the token to extract user information
-        const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';
+        const secret = process.env.JWT_ACCESS_SECRET!;
         const payload = jwt.verify(token, secret) as {
           userId: string;
           email: string;
@@ -156,7 +156,7 @@ export class AuthService {
     refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
-      const secret = process.env.JWT_REFRESH_SECRET || 'refresh-secret';
+      const secret = process.env.JWT_REFRESH_SECRET!;
       const payload = jwt.verify(refreshToken, secret) as {
         userId: string;
         email: string;
@@ -179,7 +179,7 @@ export class AuthService {
    * Get Google OAuth URL
    */
   getGoogleAuthUrl(): string {
-    const clientId = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id';
+    const clientId = process.env.GOOGLE_CLIENT_ID!;
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
     const redirectUri = `${backendUrl}/auth/google/callback`;
 
@@ -438,8 +438,7 @@ export class AuthService {
     user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour expiry
     await user.save();
 
-    // Send reset email TODO: Change email to user.email
-    await this.nodemailerService.sendResetEmail('omrialt@gmail.com', token);
+    await this.nodemailerService.sendResetEmail(user.email, token);
   }
 
   /**
@@ -478,8 +477,8 @@ export class AuthService {
     userId: string,
     email: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessSecret = process.env.JWT_ACCESS_SECRET || 'access-secret';
-    const refreshSecret = process.env.JWT_REFRESH_SECRET || 'refresh-secret';
+    const accessSecret = process.env.JWT_ACCESS_SECRET!;
+    const refreshSecret = process.env.JWT_REFRESH_SECRET!;
 
     // Fetch user role for token payload
     const user = await this.userModel.findById(userId).select('role');

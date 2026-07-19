@@ -41,7 +41,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';
+      const secret = process.env.JWT_ACCESS_SECRET!;
       const payload = jwt.verify(token, secret) as JwtPayload;
 
       // Fetch user from database to get role (or use from token if available)

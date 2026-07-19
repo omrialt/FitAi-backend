@@ -12,8 +12,18 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import * as express from 'express';
-import * as jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
+  loginSchema,
+  registerSchema,
+  refreshTokenSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  updateProfileSchema,
+  completeProfileSchema,
+} from './auth.schemas';
 import type {
   LoginDto,
   RegisterDto,
@@ -35,7 +45,7 @@ export class AuthController {
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
+  async login(@Body(new ZodValidationPipe(loginSchema)) loginDto: LoginDto) {
     return await this.authService.login(loginDto);
   }
 
@@ -44,7 +54,9 @@ export class AuthController {
    */
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  async register(@Body() registerDto: RegisterDto) {
+  async register(
+    @Body(new ZodValidationPipe(registerSchema)) registerDto: RegisterDto,
+  ) {
     return this.authService.register(registerDto);
   }
 
@@ -67,7 +79,10 @@ export class AuthController {
    */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
+  async refreshToken(
+    @Body(new ZodValidationPipe(refreshTokenSchema))
+    refreshTokenDto: RefreshTokenDto,
+  ) {
     return this.authService.refreshToken(refreshTokenDto.refreshToken);
   }
 
@@ -151,9 +166,11 @@ export class AuthController {
    * Update user profile
    */
   @Patch('profile')
+  @UseGuards(AuthGuard('jwt'))
   async updateProfile(
     @Request() req: AuthRequest,
-    @Body() updateProfileDto: UpdateProfileDto,
+    @Body(new ZodValidationPipe(updateProfileSchema))
+    updateProfileDto: UpdateProfileDto,
   ) {
     const userId = req.user?.id;
     if (!userId) {
@@ -166,27 +183,13 @@ export class AuthController {
    * Complete profile for Google OAuth users
    */
   @Patch('complete-profile')
+  @UseGuards(AuthGuard('jwt'))
   async completeProfile(
-    @Request() req: AuthRequest & { headers: { authorization?: string } },
-    @Body() completeProfileDto: CompleteProfileDto,
+    @Request() req: AuthRequest,
+    @Body(new ZodValidationPipe(completeProfileSchema))
+    completeProfileDto: CompleteProfileDto,
   ) {
-    // Try to get userId from req.user (if middleware set it) or decode from JWT
-    let userId = req.user?.id;
-
-    if (!userId) {
-      // Extract and decode JWT to get userId
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      if (token) {
-        try {
-          const secret = process.env.JWT_ACCESS_SECRET || 'access-secret';
-          const decoded = jwt.verify(token, secret) as { userId: string };
-          userId = decoded.userId;
-        } catch {
-          throw new Error('Invalid or expired token');
-        }
-      }
-    }
-
+    const userId = req.user?.id;
     if (!userId) {
       throw new Error('User ID is required');
     }
@@ -198,9 +201,11 @@ export class AuthController {
    */
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard('jwt'))
   async changePassword(
     @Request() req: AuthRequest,
-    @Body() changePasswordDto: ChangePasswordDto,
+    @Body(new ZodValidationPipe(changePasswordSchema))
+    changePasswordDto: ChangePasswordDto,
   ) {
     const userId = req.user?.id;
     if (!userId) {
@@ -218,7 +223,10 @@ export class AuthController {
    */
   @Post('forgot-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema))
+    forgotPasswordDto: ForgotPasswordDto,
+  ) {
     return this.authService.forgotPassword(forgotPasswordDto.email);
   }
 
@@ -227,7 +235,10 @@ export class AuthController {
    */
   @Post('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+  async resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema))
+    resetPasswordDto: ResetPasswordDto,
+  ) {
     return this.authService.resetPassword(
       resetPasswordDto.token,
       resetPasswordDto.newPassword,

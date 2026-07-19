@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -234,6 +234,48 @@ export class CalendarSyncService {
       throw new NotFoundException('Google Calendar refresh token not found');
     }
 
+    let accessToken = user.googleCalendar.accessToken;
+    const refreshToken = user.googleCalendar.refreshToken;
+    let expiryDate = user.googleCalendar.expiryDate;
+    const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
+
+    // Only proactively refresh when we KNOW the expiry and it's approaching.
+    // If expiryDate is missing, we rely on googleapis auto-refresh (expiry_date
+    // is now passed to setCredentials so the library handles it transparently).
+    if (expiryDate && expiryDate < fiveMinutesFromNow) {
+      try {
+        const refreshed =
+          await this.googleCalendarService.refreshAccessToken(refreshToken);
+        accessToken = refreshed.accessToken;
+        expiryDate = refreshed.expiryDate;
+        await this.userModel
+          .findByIdAndUpdate(userId, {
+            $set: {
+              'googleCalendar.accessToken': refreshed.accessToken,
+              'googleCalendar.expiryDate': refreshed.expiryDate,
+            },
+          })
+          .exec();
+      } catch (err) {
+        if (
+          err instanceof UnauthorizedException &&
+          (err.message === 'invalid_grant' ||
+            (err as any)?.response?.message === 'invalid_grant')
+        ) {
+          // Refresh token revoked or expired — disconnect calendar so user reconnects
+          await this.userModel
+            .findByIdAndUpdate(userId, {
+              $set: { 'googleCalendar.connected': false },
+            })
+            .exec();
+          throw new UnauthorizedException(
+            'Google Calendar session expired. Please reconnect your Google Calendar.',
+          );
+        }
+        throw err;
+      }
+    }
+
     const plan = await this.trainingPlanModel.findById(trainingPlanId).exec();
     if (!plan) {
       throw new NotFoundException('Training plan not found');
@@ -253,11 +295,12 @@ export class CalendarSyncService {
     // Find existing synced events in Google Calendar for this range
     const existingSyncedEvents =
       (await this.googleCalendarService.findSyncedEvents(
-        user.googleCalendar.accessToken,
-        user.googleCalendar.refreshToken,
+        accessToken,
+        refreshToken,
         trainingPlanId,
         start.toISOString(),
         end.toISOString(),
+        expiryDate,
       )) as CalendarEvent[];
 
     let created = 0;
@@ -302,17 +345,19 @@ export class CalendarSyncService {
 
       if (existingEvent && existingEvent.id) {
         await this.googleCalendarService.updateEvent(
-          user.googleCalendar.accessToken,
-          user.googleCalendar.refreshToken,
+          accessToken,
+          refreshToken,
           existingEvent.id,
           calendarEvent,
+          expiryDate,
         );
         updated++;
       } else {
         await this.googleCalendarService.createEvent(
-          user.googleCalendar.accessToken,
-          user.googleCalendar.refreshToken,
+          accessToken,
+          refreshToken,
           calendarEvent,
+          expiryDate,
         );
         created++;
       }
@@ -325,9 +370,10 @@ export class CalendarSyncService {
       if (!existingKey || !eventKeys.has(existingKey)) {
         if (existingEvent.id) {
           await this.googleCalendarService.deleteEvent(
-            user.googleCalendar.accessToken,
-            user.googleCalendar.refreshToken,
+            accessToken,
+            refreshToken,
             existingEvent.id,
+            expiryDate,
           );
           deleted++;
         }

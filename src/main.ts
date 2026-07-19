@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -19,21 +20,19 @@ async function bootstrap() {
   expressApp.use(compression());
   expressApp.use(cookieParser());
 
-  // Log all incoming requests with headers
-  expressApp.use((req, res, next) => {
-    next();
-  });
-
   // Global validation pipe with custom error handling
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: false, // Changed to false to allow all properties
+      whitelist: true,
       forbidNonWhitelisted: false,
       transform: true,
-      exceptionFactory: (errors) => {
-        console.log('Validation errors:', errors);
-        return errors;
-      },
+      exceptionFactory: (errors) =>
+        new BadRequestException(
+          errors.map((error) => ({
+            property: error.property,
+            constraints: error.constraints,
+          })),
+        ),
       validateCustomDecorators: true,
     }),
   );
@@ -44,7 +43,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.PORT || 5000;
+  const port = app.get(ConfigService).get<number>('port') ?? 3000;
   await app.listen(port);
   console.log(`🚀 Server running on http://localhost:${port}`);
 }

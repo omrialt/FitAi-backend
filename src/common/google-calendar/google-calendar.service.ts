@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { google } from 'googleapis';
 import { OAuth2Client, OAuth2ClientOptions } from 'google-auth-library';
 import { ConfigService } from '@nestjs/config';
@@ -91,6 +91,7 @@ export class GoogleCalendarService {
   private createAuthClient(
     accessToken: string,
     refreshToken?: string,
+    expiryDate?: number,
   ): OAuth2Client {
     const client = new OAuth2Client(
       this.configService.get<string>('google.clientId'),
@@ -101,6 +102,7 @@ export class GoogleCalendarService {
     client.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken,
+      ...(expiryDate ? { expiry_date: expiryDate } : {}),
     });
 
     return client;
@@ -114,8 +116,9 @@ export class GoogleCalendarService {
     refreshToken: string,
     timeMin: string,
     timeMax: string,
+    expiryDate?: number,
   ): Promise<any[]> {
-    const auth = this.createAuthClient(accessToken, refreshToken);
+    const auth = this.createAuthClient(accessToken, refreshToken, expiryDate);
     const calendar = google.calendar({ version: 'v3', auth });
 
     try {
@@ -141,8 +144,9 @@ export class GoogleCalendarService {
     accessToken: string,
     refreshToken: string,
     event: CalendarEvent,
+    expiryDate?: number,
   ): Promise<any> {
-    const auth = this.createAuthClient(accessToken, refreshToken);
+    const auth = this.createAuthClient(accessToken, refreshToken, expiryDate);
     const calendar = google.calendar({ version: 'v3', auth });
 
     try {
@@ -166,8 +170,9 @@ export class GoogleCalendarService {
     refreshToken: string,
     eventId: string,
     event: Partial<CalendarEvent>,
+    expiryDate?: number,
   ): Promise<any> {
-    const auth = this.createAuthClient(accessToken, refreshToken);
+    const auth = this.createAuthClient(accessToken, refreshToken, expiryDate);
     const calendar = google.calendar({ version: 'v3', auth });
 
     try {
@@ -191,8 +196,9 @@ export class GoogleCalendarService {
     accessToken: string,
     refreshToken: string,
     eventId: string,
+    expiryDate?: number,
   ): Promise<void> {
-    const auth = this.createAuthClient(accessToken, refreshToken);
+    const auth = this.createAuthClient(accessToken, refreshToken, expiryDate);
     const calendar = google.calendar({ version: 'v3', auth });
 
     try {
@@ -215,8 +221,9 @@ export class GoogleCalendarService {
     trainingPlanId: string,
     timeMin: string,
     timeMax: string,
+    expiryDate?: number,
   ): Promise<any[]> {
-    const auth = this.createAuthClient(accessToken, refreshToken);
+    const auth = this.createAuthClient(accessToken, refreshToken, expiryDate);
     const calendar = google.calendar({ version: 'v3', auth });
 
     try {
@@ -254,6 +261,14 @@ export class GoogleCalendarService {
         expiryDate: credentials.expiry_date,
       };
     } catch (error) {
+      // Detect expired / revoked refresh token
+      const errMsg =
+        (error as any)?.response?.data?.error ||
+        (error as any)?.message ||
+        '';
+      if (errMsg === 'invalid_grant') {
+        throw new UnauthorizedException('invalid_grant');
+      }
       console.error('Failed to refresh access token:', error);
       throw new BadRequestException('Failed to refresh access token');
     }

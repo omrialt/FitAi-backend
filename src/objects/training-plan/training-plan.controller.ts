@@ -8,7 +8,6 @@ import {
   Query,
   UseGuards,
   Delete,
-  ForbiddenException,
   Request,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -20,6 +19,24 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
+import { z } from 'zod';
+
+// Request-body schemas: strip fields clients must not set directly.
+// Sharing/activation/cloning fields are managed by their dedicated endpoints.
+const trainingPlanCreateBodySchema = trainingPlanSchema.partial().omit({
+  _id: true,
+  sharedWith: true,
+  sharedAccess: true,
+  activeByUsers: true,
+  initialParentId: true,
+});
+const trainingPlanUpdateBodySchema = trainingPlanCreateBodySchema.omit({
+  userId: true,
+  trainerId: true,
+});
+const shareBodySchema = z.object({
+  userIds: z.array(z.string()).min(1),
+});
 
 @Controller('training-plans')
 @UseGuards(AuthGuard('jwt'), RolesGuard) // Use Passport JWT guard
@@ -28,7 +45,7 @@ export class TrainingPlanController {
   @Post()
   @Roles('trainer', 'admin', 'user')
   async create(
-    @Body(new ZodValidationPipe(trainingPlanSchema.partial()))
+    @Body(new ZodValidationPipe(trainingPlanCreateBodySchema))
     data: Partial<TrainingPlan>,
     @Request() req: AuthRequest,
   ) {
@@ -59,7 +76,7 @@ export class TrainingPlanController {
   @Roles('trainer', 'admin', 'user')
   async update(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(trainingPlanSchema.partial()))
+    @Body(new ZodValidationPipe(trainingPlanUpdateBodySchema))
     data: Partial<TrainingPlan>,
   ) {
     return this.trainingPlanService.update(id, data);
@@ -75,11 +92,9 @@ export class TrainingPlanController {
   @Roles('trainer', 'admin', 'user')
   async sharePlan(
     @Param('id') planId: string,
-    @Body() body: { userIds: string[] },
+    @Body(new ZodValidationPipe(shareBodySchema))
+    body: { userIds: string[] },
   ) {
-    if (!body.userIds || !Array.isArray(body.userIds)) {
-      throw new ForbiddenException('userIds array is required');
-    }
     return this.trainingPlanService.sharePlan(planId, body.userIds);
   }
 

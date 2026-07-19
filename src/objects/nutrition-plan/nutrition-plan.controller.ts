@@ -9,7 +9,6 @@ import {
   Query,
   UseGuards,
   Request,
-  ForbiddenException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NutritionPlanService } from './nutrition-plan.service';
@@ -23,6 +22,28 @@ import {
   nutritionPlanSchema,
   type NutritionPlan,
 } from './nutrition-plan.schema';
+import { z } from 'zod';
+
+// Request-body schemas: strip fields clients must not set directly.
+// Ratings/sharing/activation are managed by their dedicated endpoints.
+const nutritionPlanCreateBodySchema = nutritionPlanSchema.partial().omit({
+  ratings: true,
+  averageRating: true,
+  totalRatings: true,
+  sharedWith: true,
+  sharedAccess: true,
+  activeByUsers: true,
+});
+const nutritionPlanUpdateBodySchema = nutritionPlanCreateBodySchema.omit({
+  userId: true,
+});
+const shareBodySchema = z.object({
+  userIds: z.array(z.string()).min(1),
+});
+const ratingBodySchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(1000).optional(),
+});
 
 @Controller('nutrition-plans')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -32,7 +53,7 @@ export class NutritionPlanController {
   @Post()
   @Roles('trainer', 'admin', 'user')
   async create(
-    @Body(new ZodValidationPipe(nutritionPlanSchema.partial()))
+    @Body(new ZodValidationPipe(nutritionPlanCreateBodySchema))
     data: Partial<NutritionPlan>,
     @Request() req: AuthRequest,
   ) {
@@ -68,7 +89,7 @@ export class NutritionPlanController {
   @Roles('trainer', 'admin', 'user')
   async update(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(nutritionPlanSchema.partial()))
+    @Body(new ZodValidationPipe(nutritionPlanUpdateBodySchema))
     data: Partial<NutritionPlan>,
   ) {
     return this.nutritionPlanService.update(id, data);
@@ -90,11 +111,9 @@ export class NutritionPlanController {
   @Roles('trainer', 'admin', 'user')
   async sharePlan(
     @Param('id') planId: string,
-    @Body() body: { userIds: string[] },
+    @Body(new ZodValidationPipe(shareBodySchema))
+    body: { userIds: string[] },
   ) {
-    if (!body.userIds || !Array.isArray(body.userIds)) {
-      throw new ForbiddenException('userIds array is required');
-    }
     return this.nutritionPlanService.sharePlan(planId, body.userIds);
   }
 
@@ -111,7 +130,8 @@ export class NutritionPlanController {
   @Roles('user', 'trainer', 'admin')
   async addRating(
     @Param('id') planId: string,
-    @Body() body: { rating: number; comment?: string },
+    @Body(new ZodValidationPipe(ratingBodySchema))
+    body: { rating: number; comment?: string },
     @Request() req: AuthRequest,
   ) {
     const userId = req.user.id;
