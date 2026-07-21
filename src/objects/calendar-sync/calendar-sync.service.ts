@@ -200,20 +200,49 @@ export class CalendarSyncService {
         endDate.toISOString(),
       );
 
-      return events
-        .filter(
-          (event: CalendarEvent) =>
-            !event.extendedProperties?.private?.syncedFromFitAi, // Exclude FitAi synced events
-        )
-        .map((event: CalendarEvent) => ({
-          id: event.id,
-          title: event.summary || 'Untitled Event',
-          start: parseISO(event.start.dateTime ?? ''),
-          end: parseISO(event.end.dateTime ?? ''),
-          description: event.description,
-          type: 'google' as const,
-          googleEventId: event.id,
-        }));
+      return (
+        events
+          .filter(
+            (event: CalendarEvent) =>
+              !event.extendedProperties?.private?.syncedFromFitAi, // Exclude FitAi synced events
+          )
+          // An all-day event carries `date` ('YYYY-MM-DD') instead of `dateTime`.
+          // Reading only `dateTime` produced an Invalid Date for those, which
+          // serialized to null and silently disappeared from the weekly view —
+          // the majority of a typical personal calendar. `parseISO` on a
+          // date-only string yields LOCAL midnight, which is what keeps the
+          // event on the correct day; `new Date('YYYY-MM-DD')` would parse as
+          // UTC and could shift it a day for negative-offset users.
+          .map((event: CalendarEvent): SyncedCalendarEvent | null => {
+            const allDay = !event.start.dateTime && !!event.start.date;
+            const startRaw = event.start.dateTime ?? event.start.date;
+            const endRaw = event.end.dateTime ?? event.end.date;
+            if (!startRaw || !endRaw) return null;
+
+            const start = parseISO(startRaw);
+            // `end.date` is exclusive (a one-day event ends on the NEXT day), so
+            // pull it back to the final instant of the day it actually covers.
+            const end = allDay
+              ? new Date(parseISO(endRaw).getTime() - 1)
+              : parseISO(endRaw);
+
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+              return null;
+            }
+
+            return {
+              id: event.id,
+              title: event.summary || 'Untitled Event',
+              start,
+              end,
+              description: event.description,
+              type: 'google' as const,
+              allDay,
+              googleEventId: event.id,
+            };
+          })
+          .filter((e): e is SyncedCalendarEvent => e !== null)
+      );
     } catch (error) {
       this.logger.error(
         'Error fetching Google Calendar events',
