@@ -1,4 +1,8 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  // `api/` is the Vercel serverless entrypoint. Vercel's @vercel/node builder
+  // compiles it from source itself, so it must stay out of the Nest build:
+  // including it makes tsc infer a higher rootDir and emit dist/src/main.js
+  // instead of dist/main.js, which silently breaks `npm run start:prod`.
+  "exclude": ["node_modules", "test", "dist", "api", "**/*spec.ts"]
 }

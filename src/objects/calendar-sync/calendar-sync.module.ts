@@ -2,7 +2,15 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CalendarSyncService } from './calendar-sync.service';
 import { CalendarSyncController } from './calendar-sync.controller';
+import { CalendarSyncCronController } from './calendar-sync-cron.controller';
 import { CalendarSyncScheduler } from './calendar-sync.scheduler';
+
+/**
+ * Serverless platforms freeze the process between requests, so the in-process
+ * @Cron scheduler cannot fire. On Vercel the equivalent work is triggered over
+ * HTTP by Vercel Cron instead; registering both would double-run the sync.
+ */
+const IS_SERVERLESS = !!process.env.VERCEL;
 import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
 import { UserSchema } from '../user/user.schema';
 import { GoogleCalendarModule } from '../../common/google-calendar/google-calendar.module';
@@ -21,10 +29,10 @@ import { TokenBlacklistSchema } from '../auth/token-blacklist.schema';
     GoogleCalendarModule,
     AuthModule,
   ],
-  controllers: [CalendarSyncController],
+  controllers: [CalendarSyncController, CalendarSyncCronController],
   providers: [
     CalendarSyncService,
-    CalendarSyncScheduler,
+    ...(IS_SERVERLESS ? [] : [CalendarSyncScheduler]),
     JwtAuthGuard,
     {
       provide: 'TokenBlacklistService',
