@@ -61,10 +61,28 @@ async function bootstrap() {
   );
 
   // CORS
+  // Allowed origins come from CORS_ORIGINS (comma-separated) so the deployed
+  // frontend can be permitted without a code change; local dev ports stay
+  // allowed by default. FRONTEND_URL is included since it is already the
+  // canonical "where the UI lives" setting used by the OAuth and reset flows.
+  const corsOrigins = Array.from(
+    new Set(
+      [
+        ...(process.env.CORS_ORIGINS?.split(',') ?? []),
+        process.env.FRONTEND_URL,
+        'http://localhost:5173',
+        'http://localhost:3000',
+      ]
+        .map((o) => o?.trim())
+        .filter((o): o is string => !!o),
+    ),
+  );
+
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    origin: corsOrigins,
     credentials: true,
   });
+  logger.log(`CORS allowed origins: ${corsOrigins.join(', ')}`);
 
   // API docs — off in production so the schema isn't publicly browsable
   const docsEnabled = process.env.NODE_ENV !== 'production';
