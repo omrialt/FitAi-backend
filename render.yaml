@@ -1,0 +1,74 @@
+# Render blueprint for the FitAi backend.
+#
+# Use: Render dashboard -> New -> Blueprint -> point at this repo.
+# Render reads this file and provisions the service; secrets are NOT stored
+# here (`sync: false` means "prompt me / set in the dashboard").
+#
+# Plan note: `starter` is deliberate. On the `free` plan Render sleeps the
+# service after ~15 minutes of inactivity, which stops the @nestjs/schedule
+# cron that drives Google Calendar sync — a correctness problem, not just a
+# cold-start delay. Use `free` only if you accept that.
+
+services:
+  - type: web
+    name: fitai-backend
+    runtime: node
+    plan: starter
+    region: frankfurt # keep close to the Atlas cluster region
+    branch: master
+
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+
+    # Render polls this to decide if a deploy succeeded and the instance is live
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render injects PORT; main.ts already reads it and binds 0.0.0.0
+      - key: NODE_VERSION
+        value: "22"
+
+      # --- Secrets: set these in the Render dashboard, never in this file ---
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+
+      # --- URLs: fill in once the service and Vercel domains exist ---
+      # BACKEND_URL must match the Render URL; it builds the Google OAuth
+      # redirect_uri, which must byte-match what is registered in Google Cloud.
+      - key: BACKEND_URL
+        sync: false
+      # FRONTEND_URL is where OAuth and password-reset land the user.
+      - key: FRONTEND_URL
+        sync: false
+      # Comma-separated origins allowed by CORS (your Vercel domain, plus any
+      # preview domains you want to permit).
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional: overrides the derived Google callback if you need a custom one
+      - key: GOOGLE_REDIRECT_URI
+        sync: false

@@ -16,6 +16,7 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { NodemailerModule } from './common/nodemailer/nodemailer.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { HealthController } from './common/health/health.controller';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     PhysicalDataModule,
     CalendarSyncModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_FILTER,

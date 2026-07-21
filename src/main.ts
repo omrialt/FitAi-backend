@@ -111,7 +111,9 @@ async function bootstrap() {
   }
 
   const port = app.get(ConfigService).get<number>('port') ?? 3000;
-  await app.listen(port);
+  // Bind to all interfaces: container platforms (Render, Fly, Docker) route
+  // external traffic to the container IP, which a localhost-only bind rejects.
+  await app.listen(port, '0.0.0.0');
 
   logger.log(`🚀 Server running on http://localhost:${port}`);
   if (docsEnabled) {
