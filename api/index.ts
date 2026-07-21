@@ -1,7 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { Application } from 'express';
 
-import { createApp } from '../src/create-app';
+// Imported from the compiled output, not from `src/`, and this is load-bearing.
+// Vercel builds this entrypoint with esbuild, which does not implement
+// `emitDecoratorMetadata` — bundling the TypeScript sources directly strips the
+// `design:paramtypes` metadata that Nest's DI container reads to resolve
+// constructor dependencies, and every injection fails at runtime. `nest build`
+// (tsc) emits that metadata correctly, so the build command produces `dist/`
+// and we load the already-compiled app from there. `includeFiles: "dist/**"` in
+// vercel.json is what ships those files alongside the function.
+import { createApp } from '../dist/create-app';
 
 /**
  * Vercel serverless entrypoint.
