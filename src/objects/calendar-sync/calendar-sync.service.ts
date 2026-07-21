@@ -69,15 +69,30 @@ export class CalendarSyncService {
     // Fetch Google Calendar events if user has connected
     let googleEvents: SyncedCalendarEvent[] = [];
     if (user.googleCalendar?.accessToken) {
-      if (!user.googleCalendar.refreshToken) {
-        throw new NotFoundException('Google Calendar refresh token not found');
+      try {
+        const creds = await this.resolveGoogleCredentials(
+          userId,
+          user.googleCalendar,
+        );
+        googleEvents = await this.fetchGoogleEvents(
+          creds.accessToken,
+          creds.refreshToken,
+          start,
+          end,
+          creds.expiryDate,
+        );
+      } catch (error) {
+        // A dead Google connection must not take the training schedule down
+        // with it — the week still renders from the active plan. This is not a
+        // silent failure: resolveGoogleCredentials has already flagged the
+        // account as disconnected, which the status endpoint surfaces so the UI
+        // can prompt a reconnect.
+        this.logger.warn(
+          `Skipping Google events for user ${userId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
-      googleEvents = await this.fetchGoogleEvents(
-        user.googleCalendar.accessToken,
-        user.googleCalendar.refreshToken,
-        start,
-        end,
-      );
     }
 
     // Merge and sort all events
@@ -184,6 +199,93 @@ export class CalendarSyncService {
   }
 
   /**
+   * Resolve usable Google credentials, refreshing the access token when it is
+   * at or near expiry (or when we do not know its expiry) and persisting the
+   * new one.
+   *
+   * Google access tokens last about an hour, so every caller needs this and it
+   * belongs in exactly one place. The read path used to skip it entirely: it
+   * passed whatever token was in the database straight through, with no expiry,
+   * so googleapis could not tell the token was stale and simply sent it. Google
+   * answered 401, `fetchGoogleEvents` swallowed the error, and the calendar
+   * showed no Google events at all — silently, and until something else
+   * happened to refresh the token.
+   *
+   * Throws UnauthorizedException when the refresh token itself is dead, after
+   * marking the account disconnected so the UI can prompt a reconnect instead
+   * of failing invisibly forever.
+   */
+  private async resolveGoogleCredentials(
+    userId: string,
+    googleCalendar: {
+      accessToken?: string;
+      refreshToken?: string;
+      expiryDate?: number;
+    },
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiryDate?: number;
+  }> {
+    const { accessToken, refreshToken, expiryDate } = googleCalendar;
+    if (!accessToken || !refreshToken) {
+      throw new NotFoundException('Google Calendar refresh token not found');
+    }
+
+    // A missing expiry is treated as "refresh now" rather than "assume valid":
+    // we cannot know how old the token is, and guessing wrong fails silently.
+    // The refreshed expiry is persisted, so this self-corrects after one call.
+    const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
+    if (expiryDate && expiryDate >= fiveMinutesFromNow) {
+      return { accessToken, refreshToken, expiryDate };
+    }
+
+    try {
+      const refreshed =
+        await this.googleCalendarService.refreshAccessToken(refreshToken);
+      await this.userModel
+        .findByIdAndUpdate(userId, {
+          $set: {
+            'googleCalendar.accessToken': refreshed.accessToken,
+            'googleCalendar.expiryDate': refreshed.expiryDate,
+          },
+        })
+        .exec();
+      return {
+        accessToken: refreshed.accessToken,
+        refreshToken,
+        expiryDate: refreshed.expiryDate,
+      };
+    } catch (err) {
+      // The cause can surface either as the exception message or inside its
+      // response body, depending on how it was constructed upstream.
+      const isDeadRefreshToken = (e: unknown): boolean => {
+        if (!(e instanceof UnauthorizedException)) return false;
+        if (e.message === 'invalid_grant') return true;
+        const body = e.getResponse();
+        const nested =
+          typeof body === 'string'
+            ? body
+            : (body as { message?: unknown }).message;
+        return nested === 'invalid_grant';
+      };
+
+      if (isDeadRefreshToken(err)) {
+        // Refresh token revoked or expired — disconnect calendar so user reconnects
+        await this.userModel
+          .findByIdAndUpdate(userId, {
+            $set: { 'googleCalendar.connected': false },
+          })
+          .exec();
+        throw new UnauthorizedException(
+          'Google Calendar session expired. Please reconnect your Google Calendar.',
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Fetch Google Calendar events
    */
   private async fetchGoogleEvents(
@@ -191,6 +293,7 @@ export class CalendarSyncService {
     refreshToken: string,
     startDate: Date,
     endDate: Date,
+    expiryDate?: number,
   ): Promise<SyncedCalendarEvent[]> {
     try {
       const events = await this.googleCalendarService.listEvents(
@@ -198,6 +301,7 @@ export class CalendarSyncService {
         refreshToken,
         startDate.toISOString(),
         endDate.toISOString(),
+        expiryDate,
       );
 
       return (
@@ -267,51 +371,8 @@ export class CalendarSyncService {
       );
     }
 
-    if (!user.googleCalendar.refreshToken) {
-      throw new NotFoundException('Google Calendar refresh token not found');
-    }
-
-    let accessToken = user.googleCalendar.accessToken;
-    const refreshToken = user.googleCalendar.refreshToken;
-    let expiryDate = user.googleCalendar.expiryDate;
-    const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
-
-    // Only proactively refresh when we KNOW the expiry and it's approaching.
-    // If expiryDate is missing, we rely on googleapis auto-refresh (expiry_date
-    // is now passed to setCredentials so the library handles it transparently).
-    if (expiryDate && expiryDate < fiveMinutesFromNow) {
-      try {
-        const refreshed =
-          await this.googleCalendarService.refreshAccessToken(refreshToken);
-        accessToken = refreshed.accessToken;
-        expiryDate = refreshed.expiryDate;
-        await this.userModel
-          .findByIdAndUpdate(userId, {
-            $set: {
-              'googleCalendar.accessToken': refreshed.accessToken,
-              'googleCalendar.expiryDate': refreshed.expiryDate,
-            },
-          })
-          .exec();
-      } catch (err) {
-        if (
-          err instanceof UnauthorizedException &&
-          (err.message === 'invalid_grant' ||
-            (err as any)?.response?.message === 'invalid_grant')
-        ) {
-          // Refresh token revoked or expired — disconnect calendar so user reconnects
-          await this.userModel
-            .findByIdAndUpdate(userId, {
-              $set: { 'googleCalendar.connected': false },
-            })
-            .exec();
-          throw new UnauthorizedException(
-            'Google Calendar session expired. Please reconnect your Google Calendar.',
-          );
-        }
-        throw err;
-      }
-    }
+    const { accessToken, refreshToken, expiryDate } =
+      await this.resolveGoogleCredentials(userId, user.googleCalendar);
 
     const plan = await this.trainingPlanModel.findById(trainingPlanId).exec();
     if (!plan) {
