@@ -16,7 +16,8 @@ export class NodemailerService {
    * @param token Password reset token
    */
   async sendResetEmail(email: string, token: string): Promise<void> {
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,

@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   ProgressStats,
   ProgressStatsDocument,
@@ -8,11 +8,24 @@ import {
 } from './progress-stats.schema';
 import { UpdateProgressStatsDto } from '../../interfaces/progress-stats.interfaces';
 
+/** Shape returned by the physical-data projection used for diffing */
+interface MeasurementPoint {
+  weightKg: number;
+  bodyFatPercent?: number;
+  dateRecorded: Date;
+}
+
 @Injectable()
 export class ProgressStatsService {
+  private readonly logger = new Logger(ProgressStatsService.name);
+
   constructor(
     @InjectModel('ProgressStats')
     private progressStatsModel: Model<ProgressStatsDocument>,
+    @InjectModel('PhysicalData')
+    private physicalDataModel: Model<MeasurementPoint>,
+    @InjectModel('TrainingPlan')
+    private trainingPlanModel: Model<unknown>,
   ) {}
 
   async getProgressStatsByUserId(userId: string): Promise<ProgressStats> {
@@ -58,11 +71,10 @@ export class ProgressStatsService {
   }
 
   async regenerateProgressStats(userId: string): Promise<ProgressStats> {
-    // This method would typically fetch raw data from PhysicalData and TrainingPlan collections
-    // and calculate the statistics. For now, we'll simulate the calculation.
-
-    const last7DaysStats = this.calculateLast7DaysStats(userId);
-    const last30DaysStats = this.calculateLast30DaysStats(userId);
+    const [last7DaysStats, last30DaysStats] = await Promise.all([
+      this.calculatePeriodStats(userId, 7),
+      this.calculatePeriodStats(userId, 30),
+    ]);
 
     return this.updateProgressStats(userId, {
       last7Days: last7DaysStats,
@@ -97,9 +109,9 @@ export class ProgressStatsService {
         );
         regeneratedStats.push(stats);
       } catch (error) {
-        console.error(
-          `Failed to regenerate stats for user ${user.userId}:`,
-          error,
+        this.logger.error(
+          `Failed to regenerate stats for user ${user.userId}`,
+          error instanceof Error ? error.stack : String(error),
         );
       }
     }
@@ -133,37 +145,141 @@ export class ProgressStatsService {
     return defaultStats.save();
   }
 
-  private calculateLast7DaysStats(_userId: string): PeriodStats {
-    // TODO: Implement actual calculation from PhysicalData and TrainingPlan collections
-    // This would involve:
-    // 1. Get physical data from last 7 days and 7 days before that
-    // 2. Calculate weight and fat differences
-    // 3. Count completed workouts in last 7 days
+  /**
+   * Build the real stats for a rolling window ending now.
+   *
+   * weightDiff/fatDiff are (latest reading in window − baseline), where the
+   * baseline is the most recent reading at or before the window start. Using
+   * the last reading *before* the window rather than the first one inside it
+   * means a single measurement taken today still yields a meaningful delta.
+   * When there is no baseline we fall back to the earliest in-window reading;
+   * with fewer than two points there is no movement to report, so 0.
+   *
+   * A positive diff means "went up" — the frontend decides whether that is
+   * good, since it depends on the user's target (bulk vs cut).
+   */
+  private async calculatePeriodStats(
+    userId: string,
+    days: number,
+  ): Promise<PeriodStats> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const [measurements, workoutsCompleted] = await Promise.all([
+      this.getMeasurementsForWindow(userId, since),
+      this.countWorkoutDays(userId, since),
+    ]);
 
-    // Placeholder implementation - replace with actual calculations
+    const { baseline, latest } = measurements;
+
+    // Body fat is optional per reading, so it gets its own pair of points
     return {
-      weightDiff: 0, // Calculate from PhysicalData collection
-      fatDiff: 0, // Calculate from PhysicalData collection
-      workoutsCompleted: 0, // Calculate from TrainingPlan or workout completion logs
+      weightDiff: this.round1(this.diff(baseline?.weightKg, latest?.weightKg)),
+      fatDiff: this.round1(
+        this.diff(baseline?.bodyFatPercent, latest?.bodyFatPercent),
+      ),
+      workoutsCompleted,
     };
   }
 
-  private calculateLast30DaysStats(_userId: string): PeriodStats {
-    // TODO: Implement actual calculation from PhysicalData and TrainingPlan collections
-    // Similar to calculateLast7DaysStats but for 30 days period
+  /**
+   * Resolve the baseline and latest measurement for a window. Body-fat points
+   * are resolved separately because a reading may omit `bodyFatPercent`.
+   */
+  private async getMeasurementsForWindow(
+    userId: string,
+    since: Date,
+  ): Promise<{
+    baseline?: Partial<MeasurementPoint>;
+    latest?: Partial<MeasurementPoint>;
+  }> {
+    const userObjectId = new Types.ObjectId(userId);
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const [inWindow, priorWeight, priorFat] = await Promise.all([
+      this.physicalDataModel
+        .find({ userId: userObjectId, dateRecorded: { $gte: since } })
+        .sort({ dateRecorded: 1 })
+        .select('weightKg bodyFatPercent dateRecorded')
+        .lean()
+        .exec(),
+      this.physicalDataModel
+        .findOne({ userId: userObjectId, dateRecorded: { $lt: since } })
+        .sort({ dateRecorded: -1 })
+        .select('weightKg dateRecorded')
+        .lean()
+        .exec(),
+      this.physicalDataModel
+        .findOne({
+          userId: userObjectId,
+          dateRecorded: { $lt: since },
+          bodyFatPercent: { $ne: null },
+        })
+        .sort({ dateRecorded: -1 })
+        .select('bodyFatPercent dateRecorded')
+        .lean()
+        .exec(),
+    ]);
 
-    // Placeholder implementation - replace with actual calculations
+    const withFat = inWindow.filter((m) => m.bodyFatPercent != null);
+
+    // Fall back to the earliest in-window reading when nothing precedes it
+    const weightBaseline = priorWeight ?? inWindow[0];
+    const fatBaseline = priorFat ?? withFat[0];
+
     return {
-      weightDiff: 0, // Calculate from PhysicalData collection
-      fatDiff: 0, // Calculate from PhysicalData collection
-      workoutsCompleted: 0, // Calculate from TrainingPlan or workout completion logs
+      baseline: {
+        weightKg: weightBaseline?.weightKg,
+        bodyFatPercent: fatBaseline?.bodyFatPercent,
+      },
+      latest: {
+        weightKg: inWindow[inWindow.length - 1]?.weightKg,
+        bodyFatPercent: withFat[withFat.length - 1]?.bodyFatPercent,
+      },
     };
+  }
+
+  /**
+   * A completed workout is a distinct calendar day on which the user logged at
+   * least one set, so several exercises logged the same day count once.
+   * Set history is nested at days[].exercises[].sets[].history[].
+   */
+  private async countWorkoutDays(userId: string, since: Date): Promise<number> {
+    const result = await this.trainingPlanModel
+      .aggregate<{ _id: string }>([
+        { $match: { userId: new Types.ObjectId(userId) } },
+        { $unwind: '$days' },
+        { $unwind: '$days.exercises' },
+        { $unwind: '$days.exercises.sets' },
+        { $unwind: '$days.exercises.sets.history' },
+        {
+          $match: {
+            'days.exercises.sets.history.date': { $gte: since },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$days.exercises.sets.history.date',
+              },
+            },
+          },
+        },
+      ])
+      .exec();
+
+    return result.length;
+  }
+
+  private diff(from?: number | null, to?: number | null): number {
+    if (from == null || to == null) return 0;
+    return to - from;
+  }
+
+  /** Stats are display values; keep them to one decimal place. */
+  private round1(value: number): number {
+    return Math.round(value * 10) / 10;
   }
 
   async updateWorkoutCount(

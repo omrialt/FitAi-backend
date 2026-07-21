@@ -6,6 +6,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Logger,
   Request,
   Res,
   UseGuards,
@@ -38,6 +39,8 @@ import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private readonly authService: AuthService) {}
 
   /**
@@ -137,12 +140,12 @@ export class AuthController {
 
       return res.redirect(`${frontendUrl}${redirectPath}?${params.toString()}`);
     } catch (error) {
-      console.error('Google OAuth authentication failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error details:', {
-        message: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Google OAuth authentication failed: ${errorMessage}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       const encodedError = encodeURIComponent(errorMessage);
       return res.redirect(`${frontendUrl}/login?error=${encodedError}`);

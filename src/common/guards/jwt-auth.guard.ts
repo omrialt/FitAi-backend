@@ -2,6 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  Logger,
   UnauthorizedException,
   Inject,
 } from '@nestjs/common';
@@ -12,6 +13,8 @@ import { JwtPayload, AuthRequest } from '../../interfaces/jwt.interfaces';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly logger = new Logger(JwtAuthGuard.name);
+
   constructor(
     @InjectModel('User') private readonly userModel: Model<any>,
     @Inject('TokenBlacklistService')
@@ -24,7 +27,6 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthRequest>();
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('🔐 JwtAuthGuard: No token provided');
       throw new UnauthorizedException('No token provided');
     }
 
@@ -35,7 +37,7 @@ export class JwtAuthGuard implements CanActivate {
       const isBlacklisted =
         await this.tokenBlacklistService.isBlacklisted(token);
       if (isBlacklisted) {
-        console.log('🔐 JwtAuthGuard: Token is blacklisted');
+        this.logger.warn('Rejected a revoked token');
         throw new UnauthorizedException('Token has been revoked');
       }
     }
@@ -73,15 +75,19 @@ export class JwtAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      if (error instanceof jwt.JsonWebTokenError) {
-        console.log('🔐 JwtAuthGuard: Invalid token error');
-        throw new UnauthorizedException('Invalid token');
-      }
+      // Expired tokens are routine (the client refreshes), so they stay quiet.
+      // TokenExpiredError extends JsonWebTokenError, so check it first.
       if (error instanceof jwt.TokenExpiredError) {
-        console.log('🔐 JwtAuthGuard: Token expired error');
         throw new UnauthorizedException('Token expired');
       }
-      console.log('🔐 JwtAuthGuard: Unexpected error:', error);
+      if (error instanceof jwt.JsonWebTokenError) {
+        this.logger.warn('Rejected a malformed token');
+        throw new UnauthorizedException('Invalid token');
+      }
+      this.logger.error(
+        'Unexpected error while verifying token',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw error;
     }
   }

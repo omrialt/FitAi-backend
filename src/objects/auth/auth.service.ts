@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
@@ -26,6 +27,8 @@ import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectModel('User') private readonly userModel: Model<User>,
     private readonly nodemailerService: NodemailerService,
@@ -134,11 +137,11 @@ export class AuthService {
           payload.userId,
         );
 
-        console.log(`User ${payload.email} logged out successfully`);
+        this.logger.log(`User ${payload.userId} logged out successfully`);
       } catch {
         // If token is invalid or expired, still allow logout
         // This ensures users can always logout even with corrupted tokens
-        console.log('Logout attempted with invalid/expired token');
+        this.logger.debug('Logout attempted with invalid/expired token');
       }
     }
 
@@ -309,7 +312,10 @@ export class AuthService {
         needsProfile,
       };
     } catch (error) {
-      console.error('Google OAuth error details:', error);
+      this.logger.error(
+        'Google OAuth exchange failed',
+        error instanceof Error ? error.stack : String(error),
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -438,7 +444,17 @@ export class AuthService {
     user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour expiry
     await user.save();
 
-    await this.nodemailerService.sendResetEmail(user.email, token);
+    // A delivery failure must not surface to the caller: an unknown email
+    // returns 204 above, so letting this throw a 500 would turn the response
+    // status into an oracle for whether an account exists.
+    try {
+      await this.nodemailerService.sendResetEmail(user.email, token);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send password reset email for user ${user.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /**

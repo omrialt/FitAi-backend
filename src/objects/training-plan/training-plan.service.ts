@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -20,6 +26,8 @@ import { CalendarSyncService } from '../calendar-sync/calendar-sync.service';
 
 @Injectable()
 export class TrainingPlanService {
+  private readonly logger = new Logger(TrainingPlanService.name);
+
   constructor(
     @InjectModel('TrainingPlan')
     private trainingPlanModel: Model<TrainingPlanDocument>,
@@ -213,7 +221,10 @@ export class TrainingPlanService {
         }
       }
     } catch (error) {
-      console.error('Error syncing shared access:', error);
+      this.logger.error(
+        'Error syncing shared access',
+        error instanceof Error ? error.stack : String(error),
+      );
       // Don't throw - parent update should succeed even if clone sync fails
     }
   }
@@ -282,7 +293,10 @@ export class TrainingPlanService {
         }
       }
     } catch (error) {
-      console.error('Error syncing to children:', error);
+      this.logger.error(
+        'Error syncing to children',
+        error instanceof Error ? error.stack : String(error),
+      );
       // Don't throw - parent update should succeed even if child sync fails
     }
   }
@@ -318,7 +332,10 @@ export class TrainingPlanService {
         await this.calendarSyncService.syncUserIfConnected(userId);
       }
     } catch (error) {
-      console.error('Auto Google Calendar sync failed:', error);
+      this.logger.error(
+        'Auto Google Calendar sync failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 

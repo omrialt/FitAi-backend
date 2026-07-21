@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -7,6 +7,8 @@ import { JwtPayload } from '../../interfaces/jwt.interfaces';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(@InjectModel('User') private readonly userModel: Model<any>) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -15,19 +17,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
+  // Logs identify the subject by id only — payloads and user records carry
+  // email and role, which must not be written to stdout on every request.
   async validate(payload: JwtPayload) {
-    console.log('🔐 JwtStrategy: Validating token payload:', payload);
-
     // If role is in payload, use it directly (faster)
     if (payload.role) {
-      const user = {
+      this.logger.debug(`Validated ${payload.userId} from token claims`);
+      return {
         id: payload.userId,
         email: payload.email,
         role: payload.role,
         roles: [payload.role],
       };
-      console.log('🔐 JwtStrategy: User validated from token:', user);
-      return user;
     }
 
     // Otherwise fetch from database
@@ -38,7 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       .exec();
 
     if (!dbUser) {
-      console.log('🔐 JwtStrategy: User not found');
+      this.logger.warn(`Token referenced unknown user ${payload.userId}`);
       throw new UnauthorizedException('User not found');
     }
 
@@ -55,7 +56,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roles: [user.role],
     };
 
-    console.log('🔐 JwtStrategy: User validated from database:', validatedUser);
+    this.logger.debug(`Validated ${validatedUser.id} from database`);
     return validatedUser;
   }
 }

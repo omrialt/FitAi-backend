@@ -9,6 +9,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { CalendarSyncService } from './calendar-sync.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -21,6 +22,8 @@ import { ConfigService } from '@nestjs/config';
 
 @Controller('calendar-sync')
 export class CalendarSyncController {
+  private readonly logger = new Logger(CalendarSyncController.name);
+
   constructor(
     private readonly calendarSyncService: CalendarSyncService,
     private readonly googleCalendarService: GoogleCalendarService,
@@ -82,7 +85,10 @@ export class CalendarSyncController {
 
       return res.redirect(`${frontendUrl}/schedule?calendar_connected=true`);
     } catch (err) {
-      console.error('Google Calendar callback error:', err);
+      this.logger.error(
+        'Google Calendar callback error',
+        err instanceof Error ? err.stack : String(err),
+      );
       return res.redirect(
         `${frontendUrl}/schedule?calendar_error=connection_failed`,
       );

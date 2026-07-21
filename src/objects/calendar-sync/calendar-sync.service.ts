@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import {
-  GoogleCalendarService,
-} from '../../common/google-calendar/google-calendar.service';
+import { GoogleCalendarService } from '../../common/google-calendar/google-calendar.service';
 import { CalendarEvent } from '../../interfaces/calendar.interfaces';
 import { SyncedCalendarEvent } from '../../interfaces/calendar-sync.interfaces';
 import { TrainingPlanDocument } from '../training-plan/training-plan.schema';
@@ -21,6 +24,8 @@ import { getIdString } from '../../utils/helpers';
 
 @Injectable()
 export class CalendarSyncService {
+  private readonly logger = new Logger(CalendarSyncService.name);
+
   constructor(
     @InjectModel('TrainingPlan')
     private trainingPlanModel: Model<TrainingPlanDocument>,
@@ -210,7 +215,10 @@ export class CalendarSyncService {
           googleEventId: event.id,
         }));
     } catch (error) {
-      console.error('Error fetching Google Calendar events:', error);
+      this.logger.error(
+        'Error fetching Google Calendar events',
+        error instanceof Error ? error.stack : String(error),
+      );
       return [];
     }
   }
@@ -421,14 +429,14 @@ export class CalendarSyncService {
         succeeded++;
       } catch (error) {
         failed++;
-        console.error(
+        this.logger.error(
           `Failed to sync Google Calendar for user ${getIdString(user._id)}:`,
           error,
         );
       }
     }
 
-    console.log(
+    this.logger.log(
       `Monthly Google Calendar sync complete: ${succeeded} succeeded, ${failed} failed out of ${connectedUsers.length} connected users`,
     );
 
@@ -461,7 +469,7 @@ export class CalendarSyncService {
       const planId = getIdString(activePlan._id);
       await this.syncTrainingPlanToGoogle(userId, planId);
     } catch (error) {
-      console.error(
+      this.logger.error(
         `Auto-sync to Google Calendar failed for user ${userId}:`,
         error,
       );

@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { google } from 'googleapis';
 import { OAuth2Client, OAuth2ClientOptions } from 'google-auth-library';
 import { ConfigService } from '@nestjs/config';
@@ -6,6 +11,8 @@ import { CalendarEvent } from '../../interfaces/calendar.interfaces';
 
 @Injectable()
 export class GoogleCalendarService {
+  private readonly logger = new Logger(GoogleCalendarService.name);
+
   private oauth2Client: OAuth2Client;
 
   constructor(private readonly configService: ConfigService) {
@@ -16,7 +23,7 @@ export class GoogleCalendarService {
     if (!clientId || !clientSecret || !redirectUri) {
       throw new Error('Missing required Google OAuth configuration');
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
     this.oauth2Client = this.createOAuthClient({
       clientId,
       clientSecret,
@@ -38,7 +45,7 @@ export class GoogleCalendarService {
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/calendar.events',
     ];
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return
+
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
@@ -57,7 +64,7 @@ export class GoogleCalendarService {
   }> {
     try {
       // Disable רק על הקריאה ל-getToken
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call,@typescript-eslint/no-unsafe-member-access
+
       const response = await this.oauth2Client.getToken(code);
 
       // עכשיו אנחנו יודעים שהטיפוסים בטוחים לפי interface שלנו
@@ -69,7 +76,10 @@ export class GoogleCalendarService {
         expiryDate: tokens.expiry_date ?? undefined,
       };
     } catch (error) {
-      console.error('Failed to exchange authorization code:', error);
+      this.logger.error(
+        'Failed to exchange authorization code',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to exchange authorization code');
     }
   }
@@ -132,7 +142,10 @@ export class GoogleCalendarService {
 
       return response.data.items || [];
     } catch (error) {
-      console.error('Error fetching calendar events:', error);
+      this.logger.error(
+        'Error fetching calendar events',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to fetch calendar events');
     }
   }
@@ -157,7 +170,10 @@ export class GoogleCalendarService {
 
       return response.data;
     } catch (error) {
-      console.error('Error creating calendar event:', error);
+      this.logger.error(
+        'Error creating calendar event',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to create calendar event');
     }
   }
@@ -184,7 +200,10 @@ export class GoogleCalendarService {
 
       return response.data;
     } catch (error) {
-      console.error('Error updating calendar event:', error);
+      this.logger.error(
+        'Error updating calendar event',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to update calendar event');
     }
   }
@@ -207,7 +226,10 @@ export class GoogleCalendarService {
         eventId,
       });
     } catch (error) {
-      console.error('Error deleting calendar event:', error);
+      this.logger.error(
+        'Error deleting calendar event',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to delete calendar event');
     }
   }
@@ -237,7 +259,10 @@ export class GoogleCalendarService {
 
       return response.data.items || [];
     } catch (error) {
-      console.error('Error finding synced events:', error);
+      this.logger.error(
+        'Error finding synced events',
+        error instanceof Error ? error.stack : String(error),
+      );
       return [];
     }
   }
@@ -263,13 +288,14 @@ export class GoogleCalendarService {
     } catch (error) {
       // Detect expired / revoked refresh token
       const errMsg =
-        (error as any)?.response?.data?.error ||
-        (error as any)?.message ||
-        '';
+        (error as any)?.response?.data?.error || (error as any)?.message || '';
       if (errMsg === 'invalid_grant') {
         throw new UnauthorizedException('invalid_grant');
       }
-      console.error('Failed to refresh access token:', error);
+      this.logger.error(
+        'Failed to refresh access token',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BadRequestException('Failed to refresh access token');
     }
   }
