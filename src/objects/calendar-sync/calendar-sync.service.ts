@@ -46,11 +46,18 @@ export class CalendarSyncService {
       throw new NotFoundException('User not found');
     }
 
-    // Default to current week if not specified
-    const start = weekStart
-      ? startOfWeek(weekStart, { weekStartsOn: 0 })
-      : startOfWeek(new Date(), { weekStartsOn: 0 });
-    const end = endOfWeek(start, { weekStartsOn: 0 });
+    // The client sends the exact instant its rendered week begins at, in ITS
+    // timezone. Do NOT re-derive that with startOfWeek here: this process runs
+    // in UTC, so it would evaluate the instant in the wrong zone and can land a
+    // whole week early. Sunday 00:00 at UTC+3 is Saturday 21:00 UTC, and the
+    // week containing *that* starts six days earlier — which is why a client
+    // ahead of UTC received the previous week's events and rendered an almost
+    // empty calendar. Honour the supplied window; only fall back to deriving
+    // one when the caller did not specify.
+    const start = weekStart ?? startOfWeek(new Date(), { weekStartsOn: 0 });
+    // Exclusive end, minus a millisecond, matching endOfWeek's semantics for
+    // the range checks below.
+    const end = new Date(addDays(start, 7).getTime() - 1);
 
     // Get active training plan
     const activePlan = await this.trainingPlanModel
