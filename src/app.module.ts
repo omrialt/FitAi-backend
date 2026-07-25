@@ -12,6 +12,7 @@ import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.mod
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
+import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { NodemailerModule } from './common/nodemailer/nodemailer.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -37,6 +38,7 @@ import { HealthController } from './common/health/health.controller';
     AiRecommendationModule,
     PhysicalDataModule,
     CalendarSyncModule,
+    TrainerConnectionModule,
   ],
   controllers: [HealthController],
   providers: [
