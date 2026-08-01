@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ForbiddenException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
@@ -23,6 +24,12 @@ import {
 } from '../../utils/mongo.helpers';
 import { CurrentStatusService } from '../current-status/current-status.service';
 import { CalendarSyncService } from '../calendar-sync/calendar-sync.service';
+import {
+  isInUserList,
+  isOwnerOrAdmin,
+  toIdString,
+  type Requester,
+} from '../../utils/ownership';
 
 @Injectable()
 export class TrainingPlanService {
@@ -116,7 +123,7 @@ export class TrainingPlanService {
     };
   }
 
-  async findById(id: string): Promise<TrainingPlan> {
+  async findById(id: string, requester?: Requester): Promise<TrainingPlan> {
     try {
       const plan = await this.trainingPlanModel
         .findById(id)
@@ -125,14 +132,85 @@ export class TrainingPlanService {
         .populate('activeByUsers', 'fullName email')
         .exec();
       if (!plan) throw new NotFoundException('Training plan not found');
+      if (requester && !this.canRead(plan, requester)) {
+        throw new ForbiddenException(
+          'You do not have access to this training plan',
+        );
+      }
       return plan.toObject();
     } catch (error) {
       handleMongoError(error);
     }
   }
 
-  async update(id: string, data: Partial<TrainingPlan>): Promise<TrainingPlan> {
+  /**
+   * Read access: the owner, the trainer who authored it, anyone it was shared
+   * with, anyone currently running it, and admins.
+   *
+   * Sharing deep-clones a plan, so a recipient is normally the *owner* of their
+   * own copy — the shared/active lists are here for the parent plan, which a
+   * trainer's client can still legitimately open.
+   */
+  private canRead(
+    plan: Pick<
+      TrainingPlanDocument,
+      'userId' | 'trainerId' | 'sharedWith' | 'activeByUsers' | 'sharedAccess'
+    >,
+    requester: Requester,
+  ): boolean {
+    if (isOwnerOrAdmin(plan.userId, requester)) return true;
+    if (toIdString(plan.trainerId) === requester.id) return true;
+    if (isInUserList(plan.sharedWith, requester.id)) return true;
+    if (isInUserList(plan.activeByUsers, requester.id)) return true;
+    return (plan.sharedAccess ?? []).some(
+      (entry) => toIdString(entry?.userId) === requester.id,
+    );
+  }
+
+  /**
+   * Write access is deliberately narrower than read access: owner, admin, or
+   * someone granted an explicit `edit` share. A plain viewer must not be able
+   * to edit or delete a plan they were only shown.
+   */
+  private canWrite(
+    plan: Pick<TrainingPlanDocument, 'userId' | 'sharedAccess'>,
+    requester: Requester,
+  ): boolean {
+    if (isOwnerOrAdmin(plan.userId, requester)) return true;
+    return (plan.sharedAccess ?? []).some(
+      (entry) =>
+        toIdString(entry?.userId) === requester.id &&
+        entry?.accessLevel === 'edit',
+    );
+  }
+
+  /** Load a plan and assert the requester may modify it. */
+  private async assertCanWrite(
+    id: string,
+    requester: Requester,
+  ): Promise<void> {
+    const plan = await this.trainingPlanModel
+      .findById(id)
+      .select('userId sharedAccess')
+      .lean()
+      .exec();
+    if (!plan) throw new NotFoundException('Training plan not found');
+    if (!this.canWrite(plan as unknown as TrainingPlanDocument, requester)) {
+      throw new ForbiddenException(
+        'You do not have permission to modify this training plan',
+      );
+    }
+  }
+
+  async update(
+    id: string,
+    data: Partial<TrainingPlan>,
+    requester?: Requester,
+  ): Promise<TrainingPlan> {
     try {
+      if (requester) {
+        await this.assertCanWrite(id, requester);
+      }
       const validatedData = validateData(trainingPlanSchema.partial(), data);
       // Get the current plan before updating
       const currentPlan = await this.trainingPlanModel.findById(id).exec();
@@ -339,8 +417,14 @@ export class TrainingPlanService {
     }
   }
 
-  async delete(id: string): Promise<{ message: string }> {
+  async delete(
+    id: string,
+    requester?: Requester,
+  ): Promise<{ message: string }> {
     try {
+      if (requester) {
+        await this.assertCanWrite(id, requester);
+      }
       await this.trainingPlanModel.findByIdAndDelete(id).exec();
       return { message: 'Training plan deleted successfully' };
     } catch (error) {
@@ -366,10 +450,21 @@ export class TrainingPlanService {
     }
   }
 
-  async sharePlan(planId: string, userIds: string[]): Promise<TrainingPlan[]> {
+  async sharePlan(
+    planId: string,
+    userIds: string[],
+    requester?: Requester,
+  ): Promise<TrainingPlan[]> {
     try {
       const originalPlan = await this.trainingPlanModel.findById(planId).exec();
       if (!originalPlan) throw new NotFoundException('Training plan not found');
+      // Sharing hands a copy of the plan to another account, so it is an
+      // owner-level action rather than a read.
+      if (requester && !isOwnerOrAdmin(originalPlan.userId, requester)) {
+        throw new ForbiddenException(
+          'Only the owner can share this training plan',
+        );
+      }
 
       const createdClones: TrainingPlan[] = [];
 
@@ -418,8 +513,15 @@ export class TrainingPlanService {
     }
   }
 
-  async revokeShare(planId: string, userId: string): Promise<TrainingPlan> {
+  async revokeShare(
+    planId: string,
+    userId: string,
+    requester?: Requester,
+  ): Promise<TrainingPlan> {
     try {
+      if (requester) {
+        await this.assertCanWrite(planId, requester);
+      }
       const plan = await this.trainingPlanModel
         .findByIdAndUpdate(
           planId,
@@ -457,8 +559,27 @@ export class TrainingPlanService {
     }
   }
 
-  async getChildClones(parentId: string): Promise<TrainingPlan[]> {
+  async getChildClones(
+    parentId: string,
+    requester?: Requester,
+  ): Promise<TrainingPlan[]> {
     try {
+      // Clones name the people a plan was shared with, so only the parent
+      // plan's owner may enumerate them.
+      if (requester) {
+        const parent = await this.trainingPlanModel
+          .findById(parentId)
+          .select('userId')
+          .lean()
+          .exec();
+        if (!parent) throw new NotFoundException('Training plan not found');
+        if (!isOwnerOrAdmin(parent.userId, requester)) {
+          throw new ForbiddenException(
+            'You do not have access to this training plan',
+          );
+        }
+      }
+
       const clones = await this.trainingPlanModel
         .find({ initialParentId: parentId })
         .populate('userId', 'fullName email')

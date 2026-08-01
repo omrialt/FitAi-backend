@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -15,11 +12,8 @@ import {
   CreateAiRecommendationDto,
   UpdateAiRecommendationDto,
 } from '../../interfaces/ai-recommendation.interfaces';
-import {
-  buildSortQuery,
-  validateData,
-  handleMongoError,
-} from '../../utils/mongo.helpers';
+import { handleMongoError } from '../../utils/mongo.helpers';
+import { assertOwnerOrAdmin, type Requester } from '../../utils/ownership';
 
 @Injectable()
 export class AiRecommendationService {
@@ -71,7 +65,10 @@ export class AiRecommendationService {
     };
   }
 
-  async findById(id: string): Promise<AiRecommendationDocument> {
+  async findById(
+    id: string,
+    requester?: Requester,
+  ): Promise<AiRecommendationDocument> {
     try {
       const recommendation = await this.aiRecommendationModel
         .findById(id)
@@ -81,6 +78,9 @@ export class AiRecommendationService {
         throw new NotFoundException(
           `AI recommendation with ID ${id} not found`,
         );
+      }
+      if (requester) {
+        assertOwnerOrAdmin(recommendation.userId, requester, 'recommendation');
       }
       return recommendation;
     } catch (error) {

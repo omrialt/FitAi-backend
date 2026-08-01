@@ -11,6 +11,7 @@ import { TrainingPlanModule } from './objects/training-plan/training-plan.module
 import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.module';
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
+import { ProgressStatsModule } from './objects/progress-stats/progress-stats.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
@@ -37,6 +38,7 @@ import { HealthController } from './common/health/health.controller';
     NutritionPlanModule,
     AiRecommendationModule,
     PhysicalDataModule,
+    ProgressStatsModule,
     CalendarSyncModule,
     TrainerConnectionModule,
   ],

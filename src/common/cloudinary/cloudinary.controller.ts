@@ -4,14 +4,22 @@ import {
   UploadedFile,
   UploadedFiles,
   UseInterceptors,
+  UseGuards,
   BadRequestException,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from './cloudinary.service';
 
+// Both routes were previously unguarded, which made the project's Cloudinary
+// account writable by anyone on the internet who found the URL. Any signed-in
+// account may upload, so authentication alone is the right bar here — a
+// @Roles() listing every role would be noise (and RolesGuard only reads
+// handler-level metadata anyway, so a class-level one would never fire).
 @Controller('upload')
+@UseGuards(AuthGuard('jwt'))
 export class CloudinaryController {
   constructor(private readonly cloudinaryService: CloudinaryService) {}
 
