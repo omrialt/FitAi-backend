@@ -14,7 +14,9 @@ import { AuthGuard } from '@nestjs/passport';
 import { TrainingPlanService } from './training-plan.service';
 import { TrainingPlan, trainingPlanSchema } from './training-plan.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserOwnershipGuard } from '../../common/guards/ownership.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { OwnsUserParam } from '../../common/decorators/owns-user-param.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
@@ -39,7 +41,7 @@ const shareBodySchema = z.object({
 });
 
 @Controller('training-plans')
-@UseGuards(AuthGuard('jwt'), RolesGuard) // Use Passport JWT guard
+@UseGuards(AuthGuard('jwt'), RolesGuard, UserOwnershipGuard)
 export class TrainingPlanController {
   constructor(private readonly trainingPlanService: TrainingPlanService) {}
   @Post()
@@ -68,8 +70,8 @@ export class TrainingPlanController {
 
   @Get(':id')
   @Roles('user', 'trainer', 'admin')
-  async findOne(@Param('id') id: string) {
-    return this.trainingPlanService.findById(id);
+  async findOne(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.trainingPlanService.findById(id, req.user);
   }
 
   @Put(':id')
@@ -78,12 +80,14 @@ export class TrainingPlanController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(trainingPlanUpdateBodySchema))
     data: Partial<TrainingPlan>,
+    @Request() req: AuthRequest,
   ) {
-    return this.trainingPlanService.update(id, data);
+    return this.trainingPlanService.update(id, data, req.user);
   }
 
   @Get('user/:userId/with-shared')
   @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
   async findByUserWithShared(@Param('userId') userId: string) {
     return this.trainingPlanService.findByUserIdWithShared(userId);
   }
@@ -94,23 +98,30 @@ export class TrainingPlanController {
     @Param('id') planId: string,
     @Body(new ZodValidationPipe(shareBodySchema))
     body: { userIds: string[] },
+    @Request() req: AuthRequest,
   ) {
-    return this.trainingPlanService.sharePlan(planId, body.userIds);
+    return this.trainingPlanService.sharePlan(planId, body.userIds, req.user);
   }
 
+  // The :userId here is the person losing access, not the caller, so
+  // @OwnsUserParam must not be applied — permission comes from owning the plan.
   @Delete(':id/share/:userId')
   @Roles('trainer', 'admin', 'user')
   async revokeShare(
     @Param('id') planId: string,
     @Param('userId') userId: string,
+    @Request() req: AuthRequest,
   ) {
-    return this.trainingPlanService.revokeShare(planId, userId);
+    return this.trainingPlanService.revokeShare(planId, userId, req.user);
   }
 
   @Get(':id/clones')
   @Roles('user', 'trainer', 'admin')
-  async getChildClones(@Param('id') parentId: string) {
-    return this.trainingPlanService.getChildClones(parentId);
+  async getChildClones(
+    @Param('id') parentId: string,
+    @Request() req: AuthRequest,
+  ) {
+    return this.trainingPlanService.getChildClones(parentId, req.user);
   }
 
   @Post(':id/activate')
@@ -120,15 +131,12 @@ export class TrainingPlanController {
     @Request() req: AuthRequest,
   ) {
     const userId = req.user.id;
-    return await this.trainingPlanService.activateTrainingPlan(
-      planId,
-      userId,
-    );
+    return await this.trainingPlanService.activateTrainingPlan(planId, userId);
   }
 
   @Delete(':id')
   @Roles('trainer', 'admin', 'user')
-  async delete(@Param('id') id: string) {
-    return this.trainingPlanService.delete(id);
+  async delete(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.trainingPlanService.delete(id, req.user);
   }
 }

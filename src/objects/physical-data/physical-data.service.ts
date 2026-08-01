@@ -1,26 +1,12 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  PhysicalData,
-  PhysicalDataDocument,
-  Measurements,
-} from './physical-data.schema';
+import { PhysicalData, PhysicalDataDocument } from './physical-data.schema';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { PaginatedResponse } from '../../interfaces/pagination.interfaces';
-import {
-  CreatePhysicalDataDto,
-  UpdatePhysicalDataDto,
-} from '../../interfaces/physical-data.interfaces';
-import {
-  buildSortQuery,
-  validateData,
-  handleMongoError,
-} from '../../utils/mongo.helpers';
+import { CreatePhysicalDataDto } from '../../interfaces/physical-data.interfaces';
+import { handleMongoError } from '../../utils/mongo.helpers';
+import { assertOwnerOrAdmin, type Requester } from '../../utils/ownership';
 
 @Injectable()
 export class PhysicalDataService {
@@ -29,14 +15,16 @@ export class PhysicalDataService {
     private physicalDataModel: Model<PhysicalDataDocument>,
   ) {}
 
-
   async create(
-    createDto: CreatePhysicalDataDto,
+    createDto: CreatePhysicalDataDto & { userId: string },
   ): Promise<PhysicalDataDocument> {
     try {
       const physicalData = new this.physicalDataModel({
         ...createDto,
         userId: new Types.ObjectId(createDto.userId),
+        ...(createDto.dateRecorded
+          ? { dateRecorded: new Date(createDto.dateRecorded) }
+          : {}),
       });
       return await physicalData.save();
     } catch (error) {
@@ -78,7 +66,10 @@ export class PhysicalDataService {
     };
   }
 
-  async findById(id: string): Promise<PhysicalDataDocument> {
+  async findById(
+    id: string,
+    requester?: Requester,
+  ): Promise<PhysicalDataDocument> {
     try {
       const physicalData = await this.physicalDataModel
         .findById(id)
@@ -86,6 +77,9 @@ export class PhysicalDataService {
         .exec();
       if (!physicalData) {
         throw new NotFoundException(`Physical data with ID ${id} not found`);
+      }
+      if (requester) {
+        assertOwnerOrAdmin(physicalData.userId, requester, 'measurement');
       }
       return physicalData;
     } catch (error) {
@@ -129,8 +123,15 @@ export class PhysicalDataService {
   async update(
     id: string,
     data: Partial<PhysicalData>,
+    requester?: Requester,
   ): Promise<PhysicalDataDocument> {
     try {
+      // Ownership is checked before the write, not after, so a denied caller
+      // never mutates the record.
+      if (requester) {
+        await this.assertCanModify(id, requester);
+      }
+
       const physicalData = await this.physicalDataModel
         .findByIdAndUpdate(id, data, {
           new: true,
@@ -147,8 +148,15 @@ export class PhysicalDataService {
     }
   }
 
-  async remove(id: string): Promise<PhysicalDataDocument> {
+  async remove(
+    id: string,
+    requester?: Requester,
+  ): Promise<PhysicalDataDocument> {
     try {
+      if (requester) {
+        await this.assertCanModify(id, requester);
+      }
+
       const physicalData = await this.physicalDataModel
         .findByIdAndDelete(id)
         .exec();
@@ -159,6 +167,22 @@ export class PhysicalDataService {
     } catch (error) {
       handleMongoError(error);
     }
+  }
+
+  /** Load just the owner of a record and assert the requester matches it. */
+  private async assertCanModify(
+    id: string,
+    requester: Requester,
+  ): Promise<void> {
+    const existing = await this.physicalDataModel
+      .findById(id)
+      .select('userId')
+      .lean()
+      .exec();
+    if (!existing) {
+      throw new NotFoundException(`Physical data with ID ${id} not found`);
+    }
+    assertOwnerOrAdmin(existing.userId, requester, 'measurement');
   }
 
   calculateBMI(heightCm: number, weightKg: number): number {
