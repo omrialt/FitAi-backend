@@ -24,6 +24,8 @@ import {
   resetPasswordSchema,
   updateProfileSchema,
   completeProfileSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
 } from './auth.schemas';
 import type {
   LoginDto,
@@ -34,6 +36,8 @@ import type {
   ResetPasswordDto,
   UpdateProfileDto,
   CompleteProfileDto,
+  VerifyEmailDto,
+  ResendVerificationDto,
 } from '../../interfaces/auth.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
@@ -231,6 +235,35 @@ export class AuthController {
     forgotPasswordDto: ForgotPasswordDto,
   ) {
     return this.authService.forgotPassword(forgotPasswordDto.email);
+  }
+
+  /**
+   * Confirm an email address.
+   *
+   * The mailed link points at the SPA (`/verify-email?token=…`), which posts
+   * the token here — the same shape as the reset-password flow, so both links
+   * land on a real page instead of a bare JSON response.
+   */
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(
+    @Body(new ZodValidationPipe(verifyEmailSchema))
+    verifyEmailDto: VerifyEmailDto,
+  ) {
+    return this.authService.verifyEmail(verifyEmailDto.token);
+  }
+
+  /**
+   * Request a fresh verification link. Always 204 — see the service for why
+   * the response must not depend on whether the address exists.
+   */
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendVerification(
+    @Body(new ZodValidationPipe(resendVerificationSchema))
+    resendDto: ResendVerificationDto,
+  ) {
+    return this.authService.resendVerification(resendDto.email);
   }
 
   /**

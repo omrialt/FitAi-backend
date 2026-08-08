@@ -5,6 +5,7 @@ import { UserSchema } from '../user/user.schema';
 import { TrainerConnectionService } from './trainer-connection.service';
 import { TrainerConnectionController } from './trainer-connection.controller';
 import { AuthModule } from '../auth/auth.module';
+import { NodemailerModule } from '../../common/nodemailer/nodemailer.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: 'User', schema: UserSchema }, // service writes User.trainerId
     ]),
     AuthModule, // provides JwtStrategy + PassportModule for the JWT guard
+    NodemailerModule, // invite notifications
   ],
   controllers: [TrainerConnectionController],
   providers: [TrainerConnectionService],

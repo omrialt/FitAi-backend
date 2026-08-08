@@ -24,10 +24,18 @@ export const periodStatsSchema = z.object({
 
 // Define the Zod schema for validation
 export const progressStatsSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  // Mongoose casts this to an ObjectId before the pre('save') hook runs, and a
+  // populated document replaces it with the whole user. Demanding a string
+  // made `createDefaultStats()` throw on every save — so GET /progress/:userId
+  // returned 500 for anyone who had no stats row yet, which is everyone the
+  // first time. Same union the other schemas already use.
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(),
+  ]),
   last7Days: periodStatsSchema.default({
     weightDiff: 0,
     fatDiff: 0,

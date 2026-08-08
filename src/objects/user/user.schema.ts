@@ -51,13 +51,19 @@ export const userSchema = z.object({
   updatedAt: z.date().optional(),
   resetPasswordToken: z.string().optional(),
   resetPasswordExpires: z.date().optional(),
+  // Set at registration and cleared the moment the link is used, so a spent
+  // token cannot verify a second account.
+  emailVerificationToken: z.string().optional(),
+  emailVerificationExpires: z.date().optional(),
   timezone: z.string().default('UTC'),
-  googleCalendar: z.object({
-    accessToken: z.string().optional(),
-    refreshToken: z.string().optional(),
-    expiryDate: z.number().optional(),
-    connected: z.boolean().default(false),
-  }).optional(),
+  googleCalendar: z
+    .object({
+      accessToken: z.string().optional(),
+      refreshToken: z.string().optional(),
+      expiryDate: z.number().optional(),
+      connected: z.boolean().default(false),
+    })
+    .optional(),
 });
 
 // Create types from Zod schema
@@ -114,6 +120,10 @@ export const UserSchema = new Schema(
     lastLogout: { type: Date },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    // `select: false` for the same reason as `password`: neither belongs in a
+    // profile response, and a leaked verification token is a free account.
+    emailVerificationToken: { type: String, select: false },
+    emailVerificationExpires: { type: Date, select: false },
     timezone: { type: String, default: 'UTC' },
     googleCalendar: {
       accessToken: { type: String },
@@ -131,6 +141,9 @@ export const UserSchema = new Schema(
 // Add indexes
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
+// Verification looks a user up by token alone, so without this the link
+// handler is a collection scan on every click.
+UserSchema.index({ emailVerificationToken: 1 });
 
 // Add virtual for related documents
 UserSchema.virtual('trainingPlans', {

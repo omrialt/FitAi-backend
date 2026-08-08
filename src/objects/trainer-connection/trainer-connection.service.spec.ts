@@ -7,9 +7,32 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TrainerConnectionService } from './trainer-connection.service';
+import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 
 const TRAINER = 'trainer-1';
 const CLIENT = 'client-1';
+const CLIENT_USER = {
+  role: 'user',
+  email: 'client@example.com',
+  fullName: 'Dana Client',
+};
+
+/**
+ * `userModel.findById` is awaited directly in invite() and chained as
+ * `.select(...).lean()` when the invite notification looks up the trainer's
+ * name, so one stub has to satisfy both shapes.
+ */
+function userLookup(value: Record<string, unknown> | null) {
+  const chain = {
+    select: () => chain,
+    lean: () => Promise.resolve(value),
+    then: <T>(
+      onOk: (v: typeof value) => T,
+      onErr?: (e: unknown) => T,
+    ): Promise<T> => Promise.resolve(value).then(onOk, onErr),
+  };
+  return chain;
+}
 
 /** A stub connection document with a spyable save(). */
 function connDoc(overrides: Record<string, unknown> = {}) {
@@ -33,6 +56,7 @@ describe('TrainerConnectionService', () => {
     create: jest.Mock;
   };
   let userModel: { findById: jest.Mock; updateOne: jest.Mock };
+  let mailer: { sendTrainerInviteEmail: jest.Mock };
 
   beforeEach(async () => {
     connectionModel = {
@@ -41,6 +65,7 @@ describe('TrainerConnectionService', () => {
       create: jest.fn(),
     };
     userModel = { findById: jest.fn(), updateOne: jest.fn() };
+    mailer = { sendTrainerInviteEmail: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +75,7 @@ describe('TrainerConnectionService', () => {
           useValue: connectionModel,
         },
         { provide: getModelToken('User'), useValue: userModel },
+        { provide: NodemailerService, useValue: mailer },
       ],
     }).compile();
 
@@ -58,7 +84,7 @@ describe('TrainerConnectionService', () => {
 
   describe('invite', () => {
     it('creates a pending invite when none exists', async () => {
-      userModel.findById.mockResolvedValue({ role: 'user' });
+      userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
       connectionModel.findOne.mockResolvedValue(null);
       connectionModel.create.mockResolvedValue(connDoc());
 
@@ -75,7 +101,7 @@ describe('TrainerConnectionService', () => {
     });
 
     it('reactivates a previously declined pair to pending', async () => {
-      userModel.findById.mockResolvedValue({ role: 'user' });
+      userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
       const existing = connDoc({ status: 'declined' });
       connectionModel.findOne.mockResolvedValue(existing);
 
@@ -87,7 +113,7 @@ describe('TrainerConnectionService', () => {
     });
 
     it('returns the existing invite without duplicating when already pending', async () => {
-      userModel.findById.mockResolvedValue({ role: 'user' });
+      userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
       const existing = connDoc({ status: 'pending' });
       connectionModel.findOne.mockResolvedValue(existing);
 
@@ -104,14 +130,40 @@ describe('TrainerConnectionService', () => {
     });
 
     it('rejects inviting an admin', async () => {
-      userModel.findById.mockResolvedValue({ role: 'admin' });
+      userModel.findById.mockReturnValue(userLookup({ role: 'admin' }));
       await expect(service.invite(TRAINER, CLIENT)).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
 
+    it('emails the client so the invite is discoverable outside the app', async () => {
+      userModel.findById
+        .mockReturnValueOnce(userLookup(CLIENT_USER))
+        .mockReturnValueOnce(userLookup({ fullName: 'Omri Trainer' }));
+      connectionModel.findOne.mockResolvedValue(null);
+      connectionModel.create.mockResolvedValue(connDoc());
+
+      await service.invite(TRAINER, CLIENT);
+
+      expect(mailer.sendTrainerInviteEmail).toHaveBeenCalledWith(
+        CLIENT_USER.email,
+        'Omri Trainer',
+        CLIENT_USER.fullName,
+      );
+    });
+
+    it('still creates the invite when the notification email fails', async () => {
+      userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
+      connectionModel.findOne.mockResolvedValue(null);
+      connectionModel.create.mockResolvedValue(connDoc());
+      mailer.sendTrainerInviteEmail.mockRejectedValue(new Error('SMTP down'));
+
+      await expect(service.invite(TRAINER, CLIENT)).resolves.toBeDefined();
+      expect(connectionModel.create).toHaveBeenCalled();
+    });
+
     it('conflicts when the pair is already accepted', async () => {
-      userModel.findById.mockResolvedValue({ role: 'user' });
+      userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
       connectionModel.findOne.mockResolvedValue(
         connDoc({ status: 'accepted' }),
       );

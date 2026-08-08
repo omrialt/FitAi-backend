@@ -31,11 +31,18 @@ describe('ProgressStatsService', () => {
   let trainingPlanModel: {
     aggregate: jest.Mock<unknown, [PipelineStage[]]>;
   };
+  let workoutSessionModel: {
+    aggregate: jest.Mock<unknown, [PipelineStage[]]>;
+  };
   let progressStatsModel: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     physicalDataModel = { find: jest.fn(), findOne: jest.fn() };
     trainingPlanModel = { aggregate: jest.fn<unknown, [PipelineStage[]]>() };
+    workoutSessionModel = { aggregate: jest.fn<unknown, [PipelineStage[]]>() };
+    // Most cases care about the legacy plan source; default the session source
+    // to empty so each test only has to state what it is actually about.
+    workoutSessionModel.aggregate.mockReturnValue(chain([]));
     progressStatsModel = {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
@@ -54,6 +61,10 @@ describe('ProgressStatsService', () => {
         {
           provide: getModelToken('TrainingPlan'),
           useValue: trainingPlanModel,
+        },
+        {
+          provide: getModelToken('WorkoutSession'),
+          useValue: workoutSessionModel,
         },
       ],
     }).compile();
@@ -168,6 +179,60 @@ describe('ProgressStatsService', () => {
       );
 
       await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
+    });
+  });
+
+  describe('workout counting across both sources', () => {
+    beforeEach(() => {
+      physicalDataModel.find.mockReturnValue(chain([]));
+      physicalDataModel.findOne.mockReturnValue(chain(null));
+    });
+
+    it('counts days logged as workout sessions', async () => {
+      trainingPlanModel.aggregate.mockReturnValue(chain([]));
+      workoutSessionModel.aggregate.mockReturnValue(
+        chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
+      );
+
+      await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
+    });
+
+    it('adds legacy plan history that has not been backfilled yet', async () => {
+      workoutSessionModel.aggregate.mockReturnValue(
+        chain([{ _id: '2026-08-01' }]),
+      );
+      trainingPlanModel.aggregate.mockReturnValue(
+        chain([{ _id: '2026-08-05' }]),
+      );
+
+      await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
+    });
+
+    // The migration copies history into sessions without removing it, so
+    // during the overlap both sources report the same day. It is one workout.
+    it('does not double-count a day present in both sources', async () => {
+      workoutSessionModel.aggregate.mockReturnValue(
+        chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
+      );
+      trainingPlanModel.aggregate.mockReturnValue(
+        chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
+      );
+
+      await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
+    });
+
+    it('scopes the session aggregation to the requested user and window', async () => {
+      trainingPlanModel.aggregate.mockReturnValue(chain([]));
+      workoutSessionModel.aggregate.mockReturnValue(chain([]));
+
+      await calc(7);
+
+      const match = workoutSessionModel.aggregate.mock.calls[0][0][0].$match as
+        | { userId?: Types.ObjectId; performedAt?: { $gte?: Date } }
+        | undefined;
+
+      expect(match?.userId?.toHexString()).toBe(userId);
+      expect(match?.performedAt?.$gte).toBeInstanceOf(Date);
     });
   });
 

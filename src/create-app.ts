@@ -9,6 +9,10 @@ import cookieParser from 'cookie-parser';
 import { Application, RequestHandler } from 'express';
 
 import { AppModule } from './app.module';
+import {
+  RATE_LIMITED_PATHS,
+  globalLimiter,
+} from './common/middleware/rate-limit';
 
 export const DOCS_PATH = 'docs';
 
@@ -51,6 +55,26 @@ export async function createApp(): Promise<INestApplication> {
   );
   expressApp.use(compression());
   expressApp.use(cookieParser());
+
+  // Vercel and every other reverse proxy put the caller's address in
+  // X-Forwarded-For. Without this the rate limiters see one proxy IP for
+  // everyone and would throttle all users together. `1` (trust the nearest
+  // proxy only) rather than `true`, which express-rate-limit rejects as
+  // permissive because a client could then forge the header.
+  expressApp.set('trust proxy', 1);
+
+  // Order matters: the limiters must be mounted before the Nest router picks
+  // the request up, and the per-endpoint limiters before the global one so a
+  // blocked login does not also consume global budget.
+  //
+  // These key off the IP alone, so they work here — middleware registered on
+  // the raw Express instance runs before Nest's body parser. The
+  // forgot-password limiter keys off the submitted email and therefore needs a
+  // parsed body, so it is applied as Nest middleware in AppModule instead.
+  for (const { paths, limiter } of RATE_LIMITED_PATHS) {
+    expressApp.use(paths, limiter);
+  }
+  expressApp.use(globalLimiter);
 
   app.useGlobalPipes(
     new ValidationPipe({
