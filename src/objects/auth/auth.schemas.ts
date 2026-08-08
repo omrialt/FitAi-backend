@@ -33,6 +33,14 @@ export const resetPasswordSchema = z.object({
   newPassword: z.string().min(6),
 });
 
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1),
+});
+
+export const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
 export const updateProfileSchema = z.object({
   fullName: z.string().min(1).optional(),
   gender: z.enum(['male', 'female', 'other']).optional(),

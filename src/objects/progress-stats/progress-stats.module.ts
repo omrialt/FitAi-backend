@@ -5,6 +5,7 @@ import { ProgressStatsService } from './progress-stats.service';
 import { ProgressStatsController } from './progress-stats.controller';
 import { PhysicalDataSchema } from '../physical-data/physical-data.schema';
 import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
+import { WorkoutSessionSchema } from '../workout-session/workout-session.schema';
 
 @Module({
   imports: [
@@ -13,6 +14,9 @@ import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
       // Read-only sources for regenerating stats
       { name: 'PhysicalData', schema: PhysicalDataSchema },
       { name: 'TrainingPlan', schema: TrainingPlanSchema },
+      // Workouts are counted from sessions now; the plan documents above stay
+      // as the fallback source until the backfill has run everywhere.
+      { name: 'WorkoutSession', schema: WorkoutSessionSchema },
     ]),
   ],
   controllers: [ProgressStatsController],

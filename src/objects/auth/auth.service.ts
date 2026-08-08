@@ -29,6 +29,15 @@ import { TokenBlacklistService } from './token-blacklist.service';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  /** Never leaves the service on a user object, whatever the caller asked for. */
+  private static readonly SECRET_FIELDS = [
+    'password',
+    'emailVerificationToken',
+    'emailVerificationExpires',
+    'resetPasswordToken',
+    'resetPasswordExpires',
+  ] as const;
+
   constructor(
     @InjectModel('User') private readonly userModel: Model<User>,
     private readonly nodemailerService: NodemailerService,
@@ -61,14 +70,8 @@ export class AuthService {
     // Generate tokens
     const tokens = await this.generateTokens(user._id.toString(), user.email);
 
-    // Remove password from response
-    const { password: _, ...userObject } = user.toObject();
-
     return {
-      user: {
-        ...userObject,
-        _id: user._id.toString(),
-      },
+      user: this.sanitize(user),
       tokens,
     };
   }
@@ -89,23 +92,39 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user
+    const verification = this.createVerificationToken();
     const user = await this.userModel.create({
       email,
       password: hashedPassword,
       ...userData,
+      emailVerified: false,
+      emailVerificationToken: verification.token,
+      emailVerificationExpires: verification.expiresAt,
     });
+
+    // Delivery is best-effort: a mail outage must not cost the user their
+    // account. They can request the link again from /auth/resend-verification.
+    try {
+      await this.nodemailerService.sendVerificationEmail(
+        user.email,
+        verification.token,
+        user.fullName,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send verification email to ${user.email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     // Generate tokens
     const tokens = await this.generateTokens(user._id.toString(), user.email);
 
-    // Remove password from response
-    const { password: _, ...userObject } = user.toObject();
-
+    // `create()` returns the document it just built, so `select: false` does
+    // not apply — the verification token has to be stripped explicitly or it
+    // ships straight back to the client that registered.
     return {
-      user: {
-        ...userObject,
-        _id: user._id.toString(),
-      },
+      user: this.sanitize(user),
       tokens,
     };
   }
@@ -300,14 +319,8 @@ export class AuthService {
       // Generate tokens
       const tokens = await this.generateTokens(user._id.toString(), user.email);
 
-      // Remove password from response and ensure _id is included
-      const { password: _, ...userObject } = user.toObject();
-
       return {
-        user: {
-          ...userObject,
-          _id: user._id.toString(),
-        },
+        user: this.sanitize(user),
         tokens,
         needsProfile,
       };
@@ -484,6 +497,132 @@ export class AuthService {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
+  }
+
+  /**
+   * Confirm an email address from the link that was mailed out.
+   *
+   * Idempotent by design: clicking a used link, or an expired one after the
+   * account is already verified, reports success rather than an error the user
+   * cannot act on. Only an unknown or expired-and-still-unverified token fails.
+   */
+  async verifyEmail(token: string): Promise<{ verified: boolean }> {
+    if (!token) {
+      throw new BadRequestException('Verification token is required');
+    }
+
+    const user = await this.userModel
+      .findOne({ emailVerificationToken: token })
+      .select('+emailVerificationToken +emailVerificationExpires');
+
+    if (!user) {
+      // The token is cleared on use, so a second click lands here. Distinguish
+      // "already done" from "never valid" is impossible without keeping spent
+      // tokens around, which is worse; a plain error is the honest answer.
+      throw new BadRequestException('Invalid or expired verification link');
+    }
+
+    if (
+      user.emailVerificationExpires &&
+      user.emailVerificationExpires.getTime() < Date.now()
+    ) {
+      throw new BadRequestException(
+        'This verification link has expired — request a new one',
+      );
+    }
+
+    const wasUnverified = !user.emailVerified;
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    if (wasUnverified) {
+      try {
+        await this.nodemailerService.sendWelcomeEmail(
+          user.email,
+          user.fullName,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to send welcome email to ${user.email}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
+    this.logger.log(`Email verified for user ${user._id.toString()}`);
+    return { verified: true };
+  }
+
+  /**
+   * Re-issue a verification link.
+   *
+   * Always resolves, whatever the address: an unknown email, an already
+   * verified one and a Google account are indistinguishable from the outside,
+   * so this endpoint cannot be used to enumerate who has an account.
+   */
+  async resendVerification(email: string): Promise<void> {
+    const user = await this.userModel
+      .findOne({ email })
+      .select('+emailVerificationToken +emailVerificationExpires');
+
+    if (!user || user.emailVerified) {
+      return;
+    }
+
+    const verification = this.createVerificationToken();
+    user.emailVerificationToken = verification.token;
+    user.emailVerificationExpires = verification.expiresAt;
+    await user.save();
+
+    try {
+      await this.nodemailerService.sendVerificationEmail(
+        user.email,
+        verification.token,
+        user.fullName,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to resend verification email to ${user.email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * A verification token is a bearer credential for an account, so it is
+   * random rather than derived, and it expires. 24 hours is long enough to
+   * survive a mail client that defers delivery overnight.
+   */
+  private createVerificationToken(): { token: string; expiresAt: Date } {
+    return {
+      token: randomBytes(32).toString('hex'),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    };
+  }
+
+  /**
+   * Strip every credential-bearing field before a user document leaves the
+   * service. `select: false` covers reads; documents this service just wrote
+   * still carry the values in memory, which is what this catches.
+   */
+  private sanitize(user: {
+    toObject: () => Record<string, unknown>;
+    _id: { toString: () => string };
+  }): AuthResponse['user'] {
+    const plain = user.toObject();
+
+    // A deny-list rather than destructuring-and-discarding: adding a field
+    // here is one line, and it reads as the security decision it is.
+    for (const field of AuthService.SECRET_FIELDS) {
+      delete plain[field];
+    }
+
+    return {
+      ...(plain as Omit<User, 'password'>),
+      _id: user._id.toString(),
+    };
   }
 
   /**

@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -12,13 +17,16 @@ import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.mod
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
 import { ProgressStatsModule } from './objects/progress-stats/progress-stats.module';
+import { WorkoutSessionModule } from './objects/workout-session/workout-session.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
+import { TrainerAccessModule } from './common/trainer-access/trainer-access.module';
 import { NodemailerModule } from './common/nodemailer/nodemailer.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HealthController } from './common/health/health.controller';
+import { forgotPasswordLimiter } from './common/middleware/rate-limit';
 
 @Module({
   imports: [
@@ -32,6 +40,9 @@ import { HealthController } from './common/health/health.controller';
     }),
     CloudinaryModule,
     NodemailerModule,
+    // Global — UserOwnershipGuard resolves TrainerAccessService from here no
+    // matter which feature module mounted the guard.
+    TrainerAccessModule,
     UserModule,
     AuthModule,
     TrainingPlanModule,
@@ -39,6 +50,7 @@ import { HealthController } from './common/health/health.controller';
     AiRecommendationModule,
     PhysicalDataModule,
     ProgressStatsModule,
+    WorkoutSessionModule,
     CalendarSyncModule,
     TrainerConnectionModule,
   ],
@@ -54,4 +66,13 @@ import { HealthController } from './common/health/health.controller';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Applied here rather than on the raw Express instance because this
+    // limiter keys off `req.body.email`, and Nest's body parser only runs
+    // once the request reaches the Nest pipeline.
+    consumer
+      .apply(forgotPasswordLimiter)
+      .forRoutes({ path: 'auth/forgot-password', method: RequestMethod.POST });
+  }
+}

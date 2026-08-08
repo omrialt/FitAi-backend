@@ -12,6 +12,7 @@ import { TrainerConnectionDocument } from './trainer-connection.schema';
 import { UserDocument } from '../user/user.schema';
 import { handleMongoError } from '../../utils/mongo.helpers';
 import { getIdString } from '../../utils/helpers';
+import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 
 // Fields exposed when populating the other party of a connection
 const CLIENT_FIELDS = 'fullName email avatarUrl role';
@@ -26,6 +27,7 @@ export class TrainerConnectionService {
     private readonly connectionModel: Model<TrainerConnectionDocument>,
     @InjectModel('User')
     private readonly userModel: Model<UserDocument>,
+    private readonly nodemailerService: NodemailerService,
   ) {}
 
   /**
@@ -66,7 +68,9 @@ export class TrainerConnectionService {
         existing.status = 'pending';
         existing.initiatedBy = 'trainer';
         this.logger.debug(`Reactivated invite ${existing._id.toString()}`);
-        return existing.save();
+        const reactivated = await existing.save();
+        await this.notifyClientOfInvite(trainerId, client);
+        return reactivated;
       }
 
       const created = await this.connectionModel.create({
@@ -76,6 +80,7 @@ export class TrainerConnectionService {
         initiatedBy: 'trainer',
       });
       this.logger.debug(`Created invite ${created._id.toString()}`);
+      await this.notifyClientOfInvite(trainerId, client);
       return created;
     } catch (error) {
       handleMongoError(error);
@@ -166,6 +171,37 @@ export class TrainerConnectionService {
       .populate('trainerId', TRAINER_FIELDS)
       .sort({ updatedAt: -1 })
       .exec();
+  }
+
+  /**
+   * Mail the client that an invite is waiting.
+   *
+   * Best-effort and deliberately outside the try/catch that wraps the write:
+   * the invite itself is already saved, so a mail failure must not roll it back
+   * or surface as an error. Before this, the only way to discover an invite was
+   * to open the app and notice a badge.
+   */
+  private async notifyClientOfInvite(
+    trainerId: string,
+    client: UserDocument,
+  ): Promise<void> {
+    try {
+      const trainer = await this.userModel
+        .findById(trainerId)
+        .select('fullName')
+        .lean();
+
+      await this.nodemailerService.sendTrainerInviteEmail(
+        client.email,
+        trainer?.fullName ?? 'A trainer',
+        client.fullName,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to email invite notification to ${client.email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /** Load a connection and assert the caller is its client and it is pending. */

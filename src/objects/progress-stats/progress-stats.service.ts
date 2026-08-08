@@ -7,6 +7,7 @@ import {
   PeriodStats,
 } from './progress-stats.schema';
 import { UpdateProgressStatsDto } from '../../interfaces/progress-stats.interfaces';
+import { getIdString } from '../../utils/helpers';
 
 /** Shape returned by the physical-data projection used for diffing */
 interface MeasurementPoint {
@@ -26,6 +27,8 @@ export class ProgressStatsService {
     private physicalDataModel: Model<MeasurementPoint>,
     @InjectModel('TrainingPlan')
     private trainingPlanModel: Model<unknown>,
+    @InjectModel('WorkoutSession')
+    private workoutSessionModel: Model<unknown>,
   ) {}
 
   async getProgressStatsByUserId(userId: string): Promise<ProgressStats> {
@@ -105,14 +108,15 @@ export class ProgressStatsService {
     const regeneratedStats: ProgressStats[] = [];
 
     for (const user of users) {
+      // `userId` is an ObjectId here (or a populated user on other reads), so
+      // it goes through getIdString rather than being stringified directly —
+      // the plain form yields "[object Object]" for the populated case.
+      const id = getIdString(user.userId);
       try {
-        const stats = await this.regenerateProgressStats(
-          user.userId.toString(),
-        );
-        regeneratedStats.push(stats);
+        regeneratedStats.push(await this.regenerateProgressStats(id));
       } catch (error) {
         this.logger.error(
-          `Failed to regenerate stats for user ${user.userId}`,
+          `Failed to regenerate stats for user ${id}`,
           error instanceof Error ? error.stack : String(error),
         );
       }
@@ -243,9 +247,57 @@ export class ProgressStatsService {
   /**
    * A completed workout is a distinct calendar day on which the user logged at
    * least one set, so several exercises logged the same day count once.
-   * Set history is nested at days[].exercises[].sets[].history[].
+   *
+   * Two sources, unioned by day:
+   *   - `WorkoutSession`, the collection sessions are written to now;
+   *   - the legacy `days[].exercises[].sets[].history[]` still embedded in
+   *     training plans.
+   *
+   * Keeping both means the number does not drop for anyone whose history has
+   * not been backfilled yet, and does not double-count once it has — a day
+   * present in both sources is still one day. Once the backfill has run
+   * everywhere and new writes only go to sessions, the legacy branch can go.
    */
   private async countWorkoutDays(userId: string, since: Date): Promise<number> {
+    const [sessionDays, legacyDays] = await Promise.all([
+      this.sessionWorkoutDays(userId, since),
+      this.legacyWorkoutDays(userId, since),
+    ]);
+
+    return new Set([...sessionDays, ...legacyDays]).size;
+  }
+
+  /** Distinct YYYY-MM-DD strings from the WorkoutSession collection. */
+  private async sessionWorkoutDays(
+    userId: string,
+    since: Date,
+  ): Promise<string[]> {
+    const result = await this.workoutSessionModel
+      .aggregate<{ _id: string }>([
+        {
+          $match: {
+            userId: new Types.ObjectId(userId),
+            performedAt: { $gte: since },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$performedAt' },
+            },
+          },
+        },
+      ])
+      .exec();
+
+    return result.map((r) => r._id);
+  }
+
+  /** Distinct YYYY-MM-DD strings still embedded in training plan documents. */
+  private async legacyWorkoutDays(
+    userId: string,
+    since: Date,
+  ): Promise<string[]> {
     const result = await this.trainingPlanModel
       .aggregate<{ _id: string }>([
         { $match: { userId: new Types.ObjectId(userId) } },
@@ -271,7 +323,7 @@ export class ProgressStatsService {
       ])
       .exec();
 
-    return result.length;
+    return result.map((r) => r._id);
   }
 
   private diff(from?: number | null, to?: number | null): number {

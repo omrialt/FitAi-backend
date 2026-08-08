@@ -33,6 +33,14 @@ export interface ResetPasswordDto {
   newPassword: string;
 }
 
+export interface VerifyEmailDto {
+  token: string;
+}
+
+export interface ResendVerificationDto {
+  email: string;
+}
+
 export interface UpdateProfileDto {
   fullName?: string;
   gender?: 'male' | 'female' | 'other';

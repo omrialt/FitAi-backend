@@ -4,5 +4,7 @@
   // compiles it from source itself, so it must stay out of the Nest build:
   // including it makes tsc infer a higher rootDir and emit dist/src/main.js
   // instead of dist/main.js, which silently breaks `npm run start:prod`.
-  "exclude": ["node_modules", "test", "dist", "api", "**/*spec.ts"]
+  // `scripts/` is excluded for the same reason: one-off maintenance scripts are
+  // run with ts-node, and including them would raise rootDir above src/.
+  "exclude": ["node_modules", "test", "dist", "api", "scripts", "**/*spec.ts"]
 }
