@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migrate:workout-sessions": "ts-node scripts/backfill-workout-sessions.ts",
-    "migrate:workout-sessions:dry": "ts-node scripts/backfill-workout-sessions.ts --dry-run"
+    "migrate:workout-sessions:dry": "ts-node scripts/backfill-workout-sessions.ts --dry-run",
+    "migrate:email-verified": "ts-node scripts/backfill-email-verified.ts",
+    "migrate:email-verified:dry": "ts-node scripts/backfill-email-verified.ts --dry-run"
   },
   "dependencies": {
     "@anatine/zod-nestjs": "^2.0.12",
