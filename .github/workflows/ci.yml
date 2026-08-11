@@ -1,0 +1,51 @@
+# Nothing checked this repo before a deploy. Deploys are push-to-deploy
+# straight to Vercel, so a broken build, a type error or a failing test only
+# surfaced in production. The tests already existed and passed; they just never
+# gated anything.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Node that Vercel runs the functions on.
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Not `npm run lint`: that script passes --fix, which would "pass" by
+      # rewriting the working tree instead of reporting anything.
+      #
+      # Non-blocking on purpose. The repo carries a long-standing baseline of
+      # ~46 problems (mostly no-unsafe-* around mongoose and jwt, and unused
+      # DTO imports) in files nobody is touching. Failing the build on those
+      # would mean every PR is red on day one, and a permanently red check is
+      # one nobody reads. Flip this to blocking once the baseline is cleared.
+      - name: Lint
+        run: npx eslint "{src,apps,libs,test}/**/*.ts"
+        continue-on-error: true
+
+      - name: Test
+        run: npm test
+
+      # Last, because it is the slowest and a type error usually shows up in
+      # the tests first.
+      - name: Build
+        run: npm run build
