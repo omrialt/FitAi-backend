@@ -11,10 +11,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ProgressStatsService } from './progress-stats.service';
 // Value imports: a type-only import erases the class and the global
 // ValidationPipe then never sees a DTO to validate.
-import {
-  IncrementWorkoutCountDto,
-  UpdateProgressStatsDto,
-} from '../../interfaces/progress-stats.interfaces';
+import { UpdateProgressStatsDto } from '../../interfaces/progress-stats.interfaces';
 import type { ProgressStats } from './progress-stats.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { UserOwnershipGuard } from '../../common/guards/ownership.guard';
@@ -66,14 +63,12 @@ export class ProgressStatsController {
     return this.progressStatsService.updateProgressStats(userId, updateData);
   }
 
-  @Post(':userId/workout-completed')
-  @Roles('user', 'trainer', 'admin')
-  @OwnsUserParam()
-  async incrementWorkoutCount(
-    @Param('userId') userId: string,
-    @Body() body: IncrementWorkoutCountDto,
-  ): Promise<ProgressStats> {
-    const increment = body.increment ?? 1;
-    return this.progressStatsService.updateWorkoutCount(userId, increment);
-  }
+  // `POST /:userId/workout-completed` used to live here. It raised the stored
+  // workout counter by a number the client supplied, alongside
+  // `calculatePeriodStats` deriving the same figure from logged sessions — two
+  // sources for one number, guaranteed to drift. Nothing called it: the
+  // frontend's "workout completed" call goes to `/status/:userId/...` on
+  // current-status, and `WorkoutSessionPage` already asks for a recalculation
+  // after a session. Removed rather than reconciled; the derived value is the
+  // correct one.
 }

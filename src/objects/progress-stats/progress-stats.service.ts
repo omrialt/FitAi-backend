@@ -6,8 +6,20 @@ import {
   ProgressStatsDocument,
   PeriodStats,
 } from './progress-stats.schema';
-import { UpdateProgressStatsDto } from '../../interfaces/progress-stats.interfaces';
 import { getIdString } from '../../utils/helpers';
+
+/**
+ * What may be written to a stats document.
+ *
+ * Wider than `UpdateProgressStatsDto` on purpose: the DTO is the shape a
+ * *client* may send and excludes the derived `workoutsCompleted`, while
+ * `regenerateProgressStats` writes it. Narrowing happens at the controller
+ * boundary, where it belongs.
+ */
+interface ProgressStatsPatch {
+  last7Days?: Partial<PeriodStats>;
+  last30Days?: Partial<PeriodStats>;
+}
 
 /** Shape returned by the physical-data projection used for diffing */
 interface MeasurementPoint {
@@ -45,9 +57,15 @@ export class ProgressStatsService {
     return stats;
   }
 
+  /**
+   * `UpdateProgressStatsDto` is the shape a *client* may send, and it excludes
+   * the derived workout count. `regenerateProgressStats` writes that count, so
+   * the internal signature is wider than the DTO on purpose — the narrowing
+   * happens at the controller boundary, where it belongs.
+   */
   async updateProgressStats(
     userId: string,
-    updateData: UpdateProgressStatsDto,
+    updateData: ProgressStatsPatch,
   ): Promise<ProgressStats> {
     const updatedStats = await this.progressStatsModel
       .findOneAndUpdate(
@@ -334,23 +352,5 @@ export class ProgressStatsService {
   /** Stats are display values; keep them to one decimal place. */
   private round1(value: number): number {
     return Math.round(value * 10) / 10;
-  }
-
-  async updateWorkoutCount(
-    userId: string,
-    increment: number = 1,
-  ): Promise<ProgressStats> {
-    const stats = await this.getProgressStatsByUserId(userId);
-
-    return this.updateProgressStats(userId, {
-      last7Days: {
-        ...stats.last7Days,
-        workoutsCompleted: stats.last7Days.workoutsCompleted + increment,
-      },
-      last30Days: {
-        ...stats.last30Days,
-        workoutsCompleted: stats.last30Days.workoutsCompleted + increment,
-      },
-    });
   }
 }
