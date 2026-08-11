@@ -1,13 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { Logger } from '@nestjs/common';
+import {
+  Logger,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let userModel: { findOne: jest.Mock };
+  let userModel: { findOne: jest.Mock; findById: jest.Mock };
   let nodemailerService: { sendResetEmail: jest.Mock };
 
   const buildUser = () => ({
@@ -18,8 +23,19 @@ describe('AuthService', () => {
     save: jest.fn().mockResolvedValue(undefined),
   });
 
+  beforeAll(() => {
+    process.env.JWT_ACCESS_SECRET = 'test-access-secret';
+    process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+  });
+
   beforeEach(async () => {
-    userModel = { findOne: jest.fn() };
+    userModel = {
+      findOne: jest.fn(),
+      // `generateTokens` reads the role through a chained select
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ role: 'user' }),
+      }),
+    };
     nodemailerService = {
       sendResetEmail: jest.fn().mockResolvedValue(undefined),
     };
@@ -40,6 +56,66 @@ describe('AuthService', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('login email verification gate', () => {
+    /**
+     * `login` reads the user through `.select('+password')`, so the mock has
+     * to answer that chain rather than resolve directly.
+     */
+    const withUser = (user: unknown) => {
+      userModel.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(user),
+      });
+    };
+
+    const account = async (emailVerified: boolean) => ({
+      _id: { toString: () => 'user-1' },
+      email: 'athlete@example.com',
+      password: await bcrypt.hash('correct-horse', 10),
+      emailVerified,
+      toObject: () => ({ _id: 'user-1', email: 'athlete@example.com' }),
+    });
+
+    it('rejects an unverified account with a machine-readable code', async () => {
+      withUser(await account(false));
+
+      const attempt = service.login({
+        email: 'athlete@example.com',
+        password: 'correct-horse',
+      });
+
+      await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { code: 'EMAIL_NOT_VERIFIED' },
+      });
+    });
+
+    // The check must sit behind the password, or the response tells an
+    // attacker which addresses have accounts.
+    it('answers a wrong password the same way whether or not the account is verified', async () => {
+      withUser(await account(false));
+
+      await expect(
+        service.login({ email: 'athlete@example.com', password: 'wrong' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('lets a verified account through', async () => {
+      withUser(await account(true));
+
+      await expect(
+        service.login({
+          email: 'athlete@example.com',
+          password: 'correct-horse',
+        }),
+      ).resolves.toMatchObject({
+        tokens: {
+          accessToken: expect.any(String) as string,
+          refreshToken: expect.any(String) as string,
+        },
+      });
+    });
+  });
 
   describe('forgotPassword', () => {
     it('resolves without sending mail when the email is unknown', async () => {

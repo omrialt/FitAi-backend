@@ -19,11 +19,7 @@ import { TokenBlacklistService } from './token-blacklist.service';
     NodemailerModule,
   ],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    TokenBlacklistService,
-    JwtStrategy,
-  ],
+  providers: [AuthService, TokenBlacklistService, JwtStrategy],
   exports: [AuthService, TokenBlacklistService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}

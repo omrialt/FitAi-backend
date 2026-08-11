@@ -18,6 +18,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = error.message;
     let details: unknown = null;
+    // Machine-readable discriminator, when the thrower supplied one. Without
+    // it the only thing a client can branch on is the human message, which is
+    // translated and rephrased freely — so any such check breaks silently.
+    let code: string | null = null;
 
     if (error instanceof HttpException) {
       status = error.getStatus();
@@ -35,6 +39,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         details =
           'error' in response
             ? ((response as { error?: string }).error ?? null)
+            : null;
+        code =
+          'code' in response
+            ? ((response as { code?: string }).code ?? null)
             : null;
       }
     } else if (error instanceof ZodError) {
@@ -57,6 +65,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message,
       details,
+      // Omitted entirely rather than sent as null, so existing responses are
+      // byte-identical to before for every error that does not carry a code.
+      ...(code ? { code } : {}),
       timestamp: new Date().toISOString(),
     });
   }

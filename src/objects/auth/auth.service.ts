@@ -3,7 +3,9 @@ import {
   Logger,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -22,12 +24,19 @@ import {
   UpdateProfileDto,
   CompleteProfileDto,
   AuthResponse,
+  RegisterResponse,
 } from '../../interfaces/auth.interfaces';
 import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  /**
+   * Error code the client branches on to offer "resend verification" instead
+   * of "wrong password". Exported as a constant so the string exists once.
+   */
+  static readonly EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 
   /** Never leaves the service on a user object, whatever the caller asked for. */
   private static readonly SECRET_FIELDS = [
@@ -67,6 +76,24 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // The verification flow (token, email, /auth/verify-email) has existed
+    // since Phase 4, but nothing ever read the flag — so an address nobody
+    // proved they own was as good as one they did. This is the check that
+    // makes the rest of that flow mean something.
+    //
+    // Deliberately after the password check: answering "verify your email"
+    // to a wrong password would tell an attacker the account exists.
+    if (!user.emailVerified) {
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Forbidden',
+        // Machine-readable so the client can offer "resend" instead of
+        // string-matching an English message that translation will change.
+        code: AuthService.EMAIL_NOT_VERIFIED,
+        message: 'Please verify your email address before signing in',
+      });
+    }
+
     // Generate tokens
     const tokens = await this.generateTokens(user._id.toString(), user.email);
 
@@ -79,7 +106,7 @@ export class AuthService {
   /**
    * Register new user
    */
-  async register(registerDto: RegisterDto): Promise<AuthResponse> {
+  async register(registerDto: RegisterDto): Promise<RegisterResponse> {
     const { email, password, ...userData } = registerDto;
 
     // Check if user already exists
@@ -117,15 +144,17 @@ export class AuthService {
       );
     }
 
-    // Generate tokens
-    const tokens = await this.generateTokens(user._id.toString(), user.email);
-
+    // No tokens. Registration used to sign the new account straight in, which
+    // would make the login check above trivially bypassable — register, get a
+    // session, never open the email. The client sends the user to the "check
+    // your inbox" state and they sign in after verifying.
+    //
     // `create()` returns the document it just built, so `select: false` does
     // not apply — the verification token has to be stripped explicitly or it
     // ships straight back to the client that registered.
     return {
       user: this.sanitize(user),
-      tokens,
+      requiresVerification: true,
     };
   }
 

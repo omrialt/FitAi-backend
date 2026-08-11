@@ -64,3 +64,13 @@ export interface AuthResponse {
     refreshToken: string;
   };
 }
+
+/**
+ * Registration deliberately does not return tokens: the account exists but
+ * cannot be used until the address is verified. Shaped as its own type so the
+ * compiler stops anyone reintroducing a session here.
+ */
+export interface RegisterResponse {
+  user: Omit<User, 'password'> & { _id: string };
+  requiresVerification: true;
+}
