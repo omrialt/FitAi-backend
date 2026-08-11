@@ -270,4 +270,40 @@ describe('ProgressStatsService', () => {
       expect(match?.userId?.toHexString()).toBe(userId);
     });
   });
+
+  describe('the workout count has one source', () => {
+    // The regression this guards: `updateWorkoutCount` used to raise a stored
+    // counter by a client-supplied number while `calculatePeriodStats` derived
+    // the same figure from logged sessions. Two writers, one number, certain
+    // drift. The manual one is gone and must not come back.
+    it('exposes no method for incrementing the count by hand', () => {
+      expect(
+        (service as unknown as Record<string, unknown>).updateWorkoutCount,
+      ).toBeUndefined();
+    });
+
+    it('regenerates the count from logged sessions, not from what was stored', async () => {
+      const day = (iso: string) => ({ _id: iso });
+      physicalDataModel.find.mockReturnValue(chain([]));
+      physicalDataModel.findOne.mockReturnValue(chain(null));
+      trainingPlanModel.aggregate.mockReturnValue(chain([]));
+      workoutSessionModel.aggregate.mockReturnValue(
+        chain([day('2026-08-01'), day('2026-08-02'), day('2026-08-03')]),
+      );
+      progressStatsModel.findOneAndUpdate.mockReturnValue({
+        populate: () => ({ exec: () => Promise.resolve({ ok: true }) }),
+      });
+
+      await service.regenerateProgressStats(userId);
+
+      // Whatever the document said before, the write carries the derived 3.
+      const calls = progressStatsModel.findOneAndUpdate.mock.calls as Record<
+        string,
+        { workoutsCompleted: number }
+      >[][];
+      const written = calls[0][1];
+      expect(written.last7Days.workoutsCompleted).toBe(3);
+      expect(written.last30Days.workoutsCompleted).toBe(3);
+    });
+  });
 });
