@@ -125,6 +125,10 @@ export const RATE_LIMITED_PATHS: Array<{
       '/auth/reset-password',
       '/auth/verify-email',
       '/auth/resend-verification',
+      // The Google handoff code is a bearer secret like the rest of these:
+      // 64 hex characters, single-use, and worth guessing at only if guesses
+      // are free.
+      '/auth/google/exchange',
     ],
     limiter: tokenLimiter,
   },

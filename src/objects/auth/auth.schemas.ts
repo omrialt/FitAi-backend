@@ -49,6 +49,15 @@ export const updateProfileSchema = z.object({
   avatarUrl: z.string().url().optional(),
 });
 
+/**
+ * The Google handoff code is 32 random bytes rendered as hex, so the length is
+ * fixed. Validating it here means a malformed code is a 400 before it reaches
+ * the database rather than a lookup miss.
+ */
+export const googleExchangeSchema = z.object({
+  code: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid authorization code'),
+});
+
 export const completeProfileSchema = z.object({
   fullName: z.string().min(1),
   gender: z.enum(['male', 'female', 'other']),

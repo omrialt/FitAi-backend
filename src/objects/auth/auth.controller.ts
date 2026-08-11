@@ -26,6 +26,7 @@ import {
   completeProfileSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  googleExchangeSchema,
 } from './auth.schemas';
 import type {
   LoginDto,
@@ -38,6 +39,7 @@ import type {
   CompleteProfileDto,
   VerifyEmailDto,
   ResendVerificationDto,
+  GoogleExchangeDto,
 } from '../../interfaces/auth.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
@@ -127,18 +129,23 @@ export class AuthController {
     }
 
     try {
-      const authResponse = await this.authService.handleGoogleCallback(code);
+      const { userId, needsProfile } =
+        await this.authService.handleGoogleCallback(code);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-      // Redirect to frontend with tokens in URL (temporary, will be stored in frontend)
-      const params = new URLSearchParams({
-        accessToken: authResponse.tokens.accessToken,
-        refreshToken: authResponse.tokens.refreshToken,
-        user: JSON.stringify(authResponse.user),
-      });
+      // This redirect used to carry accessToken, refreshToken and the whole
+      // user object as query parameters, which put a working session into
+      // browser history, into the `Referer` of the next request, and into
+      // every proxy log on the way. It now carries one opaque single-use code
+      // that the frontend trades for tokens over POST.
+      const handoff = await this.authService.issueOAuthCode(
+        userId,
+        needsProfile,
+      );
+      const params = new URLSearchParams({ code: handoff });
 
       // If user needs to complete profile, redirect to complete-profile page
-      const redirectPath = authResponse.needsProfile
+      const redirectPath = needsProfile
         ? '/complete-profile'
         : '/auth/google/callback';
 
@@ -154,6 +161,21 @@ export class AuthController {
       const encodedError = encodeURIComponent(errorMessage);
       return res.redirect(`${frontendUrl}/login?error=${encodedError}`);
     }
+  }
+
+  /**
+   * Redeem the single-use code from the Google redirect for a real session.
+   *
+   * POST rather than GET so the code travels in a body that is not logged,
+   * cached or kept in history — the whole point of moving off the query string.
+   */
+  @Post('google/exchange')
+  @HttpCode(HttpStatus.OK)
+  async googleExchange(
+    @Body(new ZodValidationPipe(googleExchangeSchema))
+    dto: GoogleExchangeDto,
+  ) {
+    return this.authService.exchangeOAuthCode(dto.code);
   }
 
   /**

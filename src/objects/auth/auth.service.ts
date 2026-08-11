@@ -24,10 +24,21 @@ import {
   AuthResponse,
 } from '../../interfaces/auth.interfaces';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { AuthCodeService } from './auth-code.service';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  /**
+   * Token lifetimes. The access token is deliberately short because it is the
+   * one that travels on every request; the refresh token is long but is now
+   * single-use and revocable, which is what makes the asymmetry safe.
+   */
+  private static readonly ACCESS_TOKEN_TTL = '15m';
+  private static readonly REFRESH_TOKEN_TTL = '7d';
+  private static readonly REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   /** Never leaves the service on a user object, whatever the caller asked for. */
   private static readonly SECRET_FIELDS = [
@@ -42,6 +53,8 @@ export class AuthService {
     @InjectModel('User') private readonly userModel: Model<User>,
     private readonly nodemailerService: NodemailerService,
     private readonly tokenBlacklistService: TokenBlacklistService,
+    private readonly refreshTokenService: RefreshTokenService,
+    private readonly authCodeService: AuthCodeService,
   ) {}
 
   /**
@@ -130,8 +143,12 @@ export class AuthService {
   }
 
   /**
-   * Logout user
-   * Invalidates the current session by adding token to blacklist
+   * Logout user.
+   *
+   * Blacklisting the access token only ever ended half the session: the
+   * refresh token survived and could mint a new access token immediately.
+   * The access token now carries its session's `fid`, so logout can delete the
+   * refresh family too and the session actually ends.
    */
   async logout(token?: string): Promise<{ message: string }> {
     if (token) {
@@ -141,6 +158,7 @@ export class AuthService {
         const payload = jwt.verify(token, secret) as {
           userId: string;
           email: string;
+          fid?: string;
         };
 
         // Update last logout time (optional - can be used for audit purposes)
@@ -155,6 +173,12 @@ export class AuthService {
           expiresAt,
           payload.userId,
         );
+
+        // Kill the refresh chain. Tokens minted before this change have no
+        // `fid`; nothing more can be done for those beyond the access token.
+        if (payload.fid) {
+          await this.refreshTokenService.revokeFamily(payload.fid);
+        }
 
         this.logger.log(`User ${payload.userId} logged out successfully`);
       } catch {
@@ -172,29 +196,86 @@ export class AuthService {
   }
 
   /**
-   * Refresh access token
+   * Exchange a refresh token for a new pair, rotating it in the process.
+   *
+   * Previously this issued a new pair and left the presented token valid for
+   * the rest of its seven days, so every refresh minted another permanent key
+   * and none of them could be revoked. Now each refresh token may be redeemed
+   * exactly once: the presented one is blacklisted, the family advances to a
+   * new `jti`, and a token from earlier in the chain is treated as a replay
+   * and kills the session.
    */
   async refreshToken(
     refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    const secret = process.env.JWT_REFRESH_SECRET!;
+
+    let payload: { userId: string; email: string; fid?: string; jti?: string };
     try {
-      const secret = process.env.JWT_REFRESH_SECRET!;
-      const payload = jwt.verify(refreshToken, secret) as {
-        userId: string;
-        email: string;
-      };
-
-      // Verify user still exists
-      const user = await this.userModel.findById(payload.userId);
-      if (!user) {
-        throw new UnauthorizedException('User not found');
-      }
-
-      // Generate new tokens
-      return await this.generateTokens(user._id.toString(), user.email);
+      payload = jwt.verify(refreshToken, secret) as typeof payload;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
+
+    // A token that was already spent, or that logout revoked.
+    if (await this.tokenBlacklistService.isBlacklisted(refreshToken)) {
+      if (payload.fid) {
+        await this.refreshTokenService.revokeFamily(payload.fid);
+      }
+      this.logger.warn(
+        `Blacklisted refresh token reused by ${payload.userId}; session revoked`,
+      );
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const user = await this.userModel.findById(payload.userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Tokens issued before rotation existed carry no `fid`/`jti`. Rejecting
+    // them would log out everyone holding one the moment this deploys, so they
+    // are honoured once and upgraded into a fresh, rotatable family.
+    if (!payload.fid || !payload.jti) {
+      this.logger.debug(
+        `Upgrading a pre-rotation refresh token for ${payload.userId}`,
+      );
+      await this.spendRefreshToken(refreshToken, payload.userId);
+      return this.generateTokens(user._id.toString(), user.email);
+    }
+
+    const result = await this.refreshTokenService.rotate(
+      payload.fid,
+      payload.jti,
+    );
+
+    if (result.status !== 'rotated') {
+      // 'replayed' already revoked the family; 'unknown' means it was revoked
+      // earlier, by logout or by a previous replay.
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    await this.spendRefreshToken(refreshToken, payload.userId);
+
+    return this.generateTokens(user._id.toString(), user.email, {
+      familyId: payload.fid,
+      jti: result.nextJti,
+    });
+  }
+
+  /**
+   * Blacklist a refresh token that has just been redeemed, so presenting it
+   * again is detectable even if its family has since been deleted.
+   */
+  private async spendRefreshToken(
+    token: string,
+    userId: string,
+  ): Promise<void> {
+    await this.tokenBlacklistService.addToBlacklist(
+      token,
+      this.tokenBlacklistService.getTokenExpiration(token),
+      userId,
+    );
   }
 
   /**
@@ -222,7 +303,7 @@ export class AuthService {
    */
   async handleGoogleCallback(
     code: string,
-  ): Promise<AuthResponse & { needsProfile?: boolean }> {
+  ): Promise<{ userId: string; needsProfile: boolean }> {
     try {
       const clientId = process.env.GOOGLE_CLIENT_ID;
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -316,12 +397,12 @@ export class AuthService {
       user.lastLogin = new Date();
       await user.save();
 
-      // Generate tokens
-      const tokens = await this.generateTokens(user._id.toString(), user.email);
-
+      // No tokens are minted here. The controller hands the browser a
+      // single-use code instead, and the session is created when that code is
+      // redeemed — otherwise every Google sign-in would open a refresh family
+      // that the redirect never uses.
       return {
-        user: this.sanitize(user),
-        tokens,
+        userId: user._id.toString(),
         needsProfile,
       };
     } catch (error) {
@@ -626,11 +707,25 @@ export class AuthService {
   }
 
   /**
-   * Generate JWT tokens
+   * Generate an access/refresh pair.
+   *
+   * The access token used to be signed with `expiresIn: '7d'` — the same
+   * lifetime as the refresh token. That made the refresh mechanism pointless:
+   * a captured access token was a week-long key, and nothing could revoke it
+   * except blacklisting that exact string. Fifteen minutes is the number the
+   * rest of the codebase already assumed (see the fallback in
+   * `TokenBlacklistService.getTokenExpiration`), and the frontend has had a
+   * single-flight 401-refresh interceptor since Phase 1, so shortening it is
+   * invisible to users.
+   *
+   * Both tokens carry `fid` so that logout can revoke the whole session from
+   * an access token alone, and the refresh token carries `jti` so the family
+   * store can tell the live token from a replayed one.
    */
   private async generateTokens(
     userId: string,
     email: string,
+    session?: { familyId: string; jti: string },
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const accessSecret = process.env.JWT_ACCESS_SECRET!;
     const refreshSecret = process.env.JWT_REFRESH_SECRET!;
@@ -639,14 +734,61 @@ export class AuthService {
     const user = await this.userModel.findById(userId).select('role');
     const role = user?.role || 'user';
 
-    const accessToken = jwt.sign({ userId, email, role }, accessSecret, {
-      expiresIn: '7d',
-    });
+    const { familyId, jti } = session ?? this.refreshTokenService.startFamily();
 
-    const refreshToken = jwt.sign({ userId, email, role }, refreshSecret, {
-      expiresIn: '7d',
-    });
+    const accessToken = jwt.sign(
+      { userId, email, role, fid: familyId },
+      accessSecret,
+      { expiresIn: AuthService.ACCESS_TOKEN_TTL },
+    );
+
+    const refreshToken = jwt.sign(
+      { userId, email, role, fid: familyId, jti },
+      refreshSecret,
+      { expiresIn: AuthService.REFRESH_TOKEN_TTL },
+    );
+
+    // Registering after signing means a storage failure surfaces as a failed
+    // login rather than a token nobody can ever refresh.
+    await this.refreshTokenService.register(
+      familyId,
+      userId,
+      jti,
+      new Date(Date.now() + AuthService.REFRESH_TOKEN_TTL_MS),
+    );
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Mint a single-use code for the Google redirect. See `AuthCodeService`.
+   */
+  async issueOAuthCode(userId: string, needsProfile: boolean): Promise<string> {
+    return this.authCodeService.issue(userId, needsProfile);
+  }
+
+  /**
+   * Redeem a Google handoff code for a real session.
+   */
+  async exchangeOAuthCode(
+    code: string,
+  ): Promise<AuthResponse & { needsProfile: boolean }> {
+    const redeemed = await this.authCodeService.redeem(code);
+    if (!redeemed) {
+      throw new UnauthorizedException('Invalid or expired authorization code');
+    }
+
+    const user = await this.userModel.findById(redeemed.userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const tokens = await this.generateTokens(user._id.toString(), user.email);
+
+    return {
+      user: this.sanitize(user),
+      tokens,
+      needsProfile: redeemed.needsProfile,
+    };
   }
 }

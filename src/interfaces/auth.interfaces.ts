@@ -57,6 +57,10 @@ export interface CompleteProfileDto {
   height?: number;
 }
 
+export interface GoogleExchangeDto {
+  code: string;
+}
+
 export interface AuthResponse {
   user: Omit<User, 'password'> & { _id: string };
   tokens: {
