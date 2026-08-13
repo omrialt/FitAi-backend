@@ -15,8 +15,11 @@ import { NutritionPlanService } from './nutrition-plan.service';
 import type { PaginationDto } from '../../common/dto/pagination.dto';
 import { paginationSchema } from '../../common/dto/pagination.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserOwnershipGuard } from '../../common/guards/ownership.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { OwnsUserParam } from '../../common/decorators/owns-user-param.decorator';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
+import type { Requester } from '../../utils/ownership';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   nutritionPlanSchema,
@@ -45,8 +48,18 @@ const ratingBodySchema = z.object({
   comment: z.string().max(1000).optional(),
 });
 
+/** `req.user` reduced to what an access decision needs. */
+const requesterOf = (req: AuthRequest): Requester => ({
+  id: req.user.id,
+  role: req.user.role,
+});
+
 @Controller('nutrition-plans')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+// UserOwnershipGuard was missing here while every other data controller
+// mounted it, so `:userId` routes served any account's plans to any caller and
+// the `:id` routes let anyone read, edit or delete any plan. `@Roles` answers
+// "is this a user?", never "is this yours?".
+@UseGuards(AuthGuard('jwt'), RolesGuard, UserOwnershipGuard)
 export class NutritionPlanController {
   constructor(private readonly nutritionPlanService: NutritionPlanService) {}
 
@@ -75,14 +88,15 @@ export class NutritionPlanController {
 
   @Get('user/:userId')
   @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam('userId')
   findByUserId(@Param('userId') userId: string) {
     return this.nutritionPlanService.findByUserId(userId);
   }
 
   @Get(':id')
   @Roles('user', 'trainer', 'admin')
-  async findOne(@Param('id') id: string) {
-    return this.nutritionPlanService.findById(id);
+  async findOne(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.nutritionPlanService.findById(id, requesterOf(req));
   }
 
   @Put(':id')
@@ -91,18 +105,20 @@ export class NutritionPlanController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(nutritionPlanUpdateBodySchema))
     data: Partial<NutritionPlan>,
+    @Request() req: AuthRequest,
   ) {
-    return this.nutritionPlanService.update(id, data);
+    return this.nutritionPlanService.update(id, data, requesterOf(req));
   }
 
   @Delete(':id')
   @Roles('trainer', 'admin', 'user')
-  async delete(@Param('id') id: string) {
-    return this.nutritionPlanService.remove(id);
+  async delete(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.nutritionPlanService.remove(id, requesterOf(req));
   }
 
   @Get('user/:userId/with-shared')
   @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam('userId')
   async findByUserWithShared(@Param('userId') userId: string) {
     return this.nutritionPlanService.findByUserIdWithShared(userId);
   }
@@ -113,17 +129,30 @@ export class NutritionPlanController {
     @Param('id') planId: string,
     @Body(new ZodValidationPipe(shareBodySchema))
     body: { userIds: string[] },
+    @Request() req: AuthRequest,
   ) {
-    return this.nutritionPlanService.sharePlan(planId, body.userIds);
+    return this.nutritionPlanService.sharePlan(
+      planId,
+      body.userIds,
+      requesterOf(req),
+    );
   }
 
+  // The `:userId` here is whose access is being revoked, not the caller, so it
+  // deliberately carries no @OwnsUserParam — authority to revoke comes from
+  // being able to write the plan, which the service checks.
   @Delete(':id/share/:userId')
   @Roles('trainer', 'admin', 'user')
   async revokeShare(
     @Param('id') planId: string,
     @Param('userId') userId: string,
+    @Request() req: AuthRequest,
   ) {
-    return this.nutritionPlanService.revokeShare(planId, userId);
+    return this.nutritionPlanService.revokeShare(
+      planId,
+      userId,
+      requesterOf(req),
+    );
   }
 
   @Post(':id/ratings')
@@ -134,10 +163,9 @@ export class NutritionPlanController {
     body: { rating: number; comment?: string },
     @Request() req: AuthRequest,
   ) {
-    const userId = req.user.id;
     return await this.nutritionPlanService.addRating(
       planId,
-      userId,
+      requesterOf(req),
       body.rating,
       body.comment,
     );
@@ -149,10 +177,9 @@ export class NutritionPlanController {
     @Param('id') planId: string,
     @Request() req: AuthRequest,
   ) {
-    const userId = req.user.id;
     return await this.nutritionPlanService.activateNutritionPlan(
       planId,
-      userId,
+      requesterOf(req),
     );
   }
 }

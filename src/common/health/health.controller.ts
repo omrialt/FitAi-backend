@@ -21,9 +21,26 @@ export class HealthController {
 
   @Get()
   @ApiOperation({ summary: 'Liveness probe with database connectivity' })
-  check() {
-    // mongoose readyState: 1 = connected
-    const dbConnected = this.connection.readyState === 1;
+  async check() {
+    // `readyState` is the driver's belief about the socket; it stays at 1 for a
+    // while after the server stops answering. A ping is the only thing that
+    // asks the database itself, and a health check that reports "connected"
+    // through an outage is worse than none.
+    //
+    // The response keys are unchanged — external checks already read `status`
+    // and `database` — but `database` is now earned rather than assumed.
+    // mongoose ConnectionStates.connected — compared as a number because the
+    // driver types readyState as its own enum.
+    const CONNECTED = 1;
+    let dbConnected = Number(this.connection.readyState) === CONNECTED;
+
+    if (dbConnected) {
+      try {
+        await this.connection.db?.admin().ping();
+      } catch {
+        dbConnected = false;
+      }
+    }
 
     return {
       status: dbConnected ? 'ok' : 'degraded',

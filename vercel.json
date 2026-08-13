@@ -19,6 +19,10 @@
     {
       "path": "/cron/calendar-sync",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/cron/monitor",
+      "schedule": "0 7 * * *"
     }
   ]
 }
