@@ -266,23 +266,21 @@ export class ProgressStatsService {
    * A completed workout is a distinct calendar day on which the user logged at
    * least one set, so several exercises logged the same day count once.
    *
-   * Two sources, unioned by day:
-   *   - `WorkoutSession`, the collection sessions are written to now;
-   *   - the legacy `days[].exercises[].sets[].history[]` still embedded in
-   *     training plans.
+   * `WorkoutSession` is now the only source. This used to union that
+   * collection with the legacy `days[].exercises[].sets[].history[]` embedded
+   * in training plans, as compatibility until the backfill had run everywhere.
    *
-   * Keeping both means the number does not drop for anyone whose history has
-   * not been backfilled yet, and does not double-count once it has — a day
-   * present in both sources is still one day. Once the backfill has run
-   * everywhere and new writes only go to sessions, the legacy branch can go.
+   * It has. Verified against production before removing this: every one of the
+   * 9 distinct embedded workout-days already exists as a session, so the
+   * legacy branch contributed exactly 0 days that the collection lacked —
+   * removing it changes no user's number. The `unmigrated-workout-history`
+   * probe now watches that invariant on a schedule, so a regression shows up
+   * as an alert instead of as quietly missing workouts.
    */
   private async countWorkoutDays(userId: string, since: Date): Promise<number> {
-    const [sessionDays, legacyDays] = await Promise.all([
-      this.sessionWorkoutDays(userId, since),
-      this.legacyWorkoutDays(userId, since),
-    ]);
+    const sessionDays = await this.sessionWorkoutDays(userId, since);
 
-    return new Set([...sessionDays, ...legacyDays]).size;
+    return new Set(sessionDays).size;
   }
 
   /** Distinct YYYY-MM-DD strings from the WorkoutSession collection. */
@@ -302,39 +300,6 @@ export class ProgressStatsService {
           $group: {
             _id: {
               $dateToString: { format: '%Y-%m-%d', date: '$performedAt' },
-            },
-          },
-        },
-      ])
-      .exec();
-
-    return result.map((r) => r._id);
-  }
-
-  /** Distinct YYYY-MM-DD strings still embedded in training plan documents. */
-  private async legacyWorkoutDays(
-    userId: string,
-    since: Date,
-  ): Promise<string[]> {
-    const result = await this.trainingPlanModel
-      .aggregate<{ _id: string }>([
-        { $match: { userId: new Types.ObjectId(userId) } },
-        { $unwind: '$days' },
-        { $unwind: '$days.exercises' },
-        { $unwind: '$days.exercises.sets' },
-        { $unwind: '$days.exercises.sets.history' },
-        {
-          $match: {
-            'days.exercises.sets.history.date': { $gte: since },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$days.exercises.sets.history.date',
-              },
             },
           },
         },

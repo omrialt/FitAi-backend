@@ -9,6 +9,7 @@ import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
 import { NutritionPlanSchema } from '../nutrition-plan/nutrition-plan.schema';
 import { TokenBlacklistSchema } from '../auth/token-blacklist.schema';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
+import { AccountModule } from '../account/account.module';
 
 @Module({
   imports: [
@@ -18,6 +19,9 @@ import { TokenBlacklistService } from '../auth/token-blacklist.service';
       { name: 'NutritionPlan', schema: NutritionPlanSchema },
       { name: 'TokenBlacklist', schema: TokenBlacklistSchema },
     ]),
+    // Admin deletion delegates to the same cascade as self-service deletion,
+    // so there is one definition of what deleting an account means.
+    AccountModule,
   ],
   controllers: [UserController, AdminController],
   providers: [

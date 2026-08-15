@@ -20,6 +20,7 @@ import { CreateUserDto, UpdateUserDto } from '../../interfaces/user.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AccountService } from '../account/account.service';
 
 /**
  * Fields on UpdateUserDto that decide what an account *is*, rather than what it
@@ -32,7 +33,10 @@ const ADMIN_ONLY_FIELDS = ['role', 'isActive', 'emailVerified'] as const;
 @Controller('users')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly accountService: AccountService,
+  ) {}
 
   @Post()
   @Roles('admin')
@@ -79,10 +83,20 @@ export class UserController {
     return this.userService.update(id, payload);
   }
 
+  /**
+   * Deletes the user *and everything belonging to them*.
+   *
+   * This used to be a bare `findByIdAndDelete` on the users collection, which
+   * removed the account and left its training plans, nutrition plans,
+   * measurements, sessions, progress stats and trainer connections behind —
+   * health data with no account to explain whose it was, and dangling
+   * references that populate to null. It now runs the same cascade as
+   * self-service deletion.
+   */
   @Delete(':id')
   @Roles('admin')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   remove(@Param('id') id: string) {
-    return this.userService.remove(id);
+    return this.accountService.deleteAccount(id);
   }
 }

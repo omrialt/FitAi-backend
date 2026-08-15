@@ -74,7 +74,7 @@ describe('ProgressStatsService', () => {
 
   /** The pipeline the service handed to Model.aggregate on its first call. */
   const capturedPipeline = (): PipelineStage[] =>
-    trainingPlanModel.aggregate.mock.calls[0][0];
+    workoutSessionModel.aggregate.mock.calls[0][0];
 
   /** Reach the private period calculation without going through Mongo. */
   const calc = (days: number) =>
@@ -174,7 +174,7 @@ describe('ProgressStatsService', () => {
       physicalDataModel.find.mockReturnValue(chain([]));
       physicalDataModel.findOne.mockReturnValue(chain(null));
       // The aggregation groups by day, so each row is already a distinct day
-      trainingPlanModel.aggregate.mockReturnValue(
+      workoutSessionModel.aggregate.mockReturnValue(
         chain([{ _id: '2026-07-01' }, { _id: '2026-07-03' }]),
       );
 
@@ -182,14 +182,19 @@ describe('ProgressStatsService', () => {
     });
   });
 
-  describe('workout counting across both sources', () => {
+  /**
+   * WorkoutSession is the only source now. The union with the legacy embedded
+   * history was removed once the backfill was verified complete against
+   * production — every embedded workout-day already existed as a session, so
+   * the legacy branch contributed nothing.
+   */
+  describe('workout counting', () => {
     beforeEach(() => {
       physicalDataModel.find.mockReturnValue(chain([]));
       physicalDataModel.findOne.mockReturnValue(chain(null));
     });
 
     it('counts days logged as workout sessions', async () => {
-      trainingPlanModel.aggregate.mockReturnValue(chain([]));
       workoutSessionModel.aggregate.mockReturnValue(
         chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
       );
@@ -197,77 +202,53 @@ describe('ProgressStatsService', () => {
       await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
     });
 
-    it('adds legacy plan history that has not been backfilled yet', async () => {
+    it('counts a repeated day once', async () => {
       workoutSessionModel.aggregate.mockReturnValue(
-        chain([{ _id: '2026-08-01' }]),
-      );
-      trainingPlanModel.aggregate.mockReturnValue(
-        chain([{ _id: '2026-08-05' }]),
+        chain([
+          { _id: '2026-08-01' },
+          { _id: '2026-08-01' },
+          { _id: '2026-08-02' },
+        ]),
       );
 
       await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
     });
 
-    // The migration copies history into sessions without removing it, so
-    // during the overlap both sources report the same day. It is one workout.
-    it('does not double-count a day present in both sources', async () => {
-      workoutSessionModel.aggregate.mockReturnValue(
-        chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
-      );
-      trainingPlanModel.aggregate.mockReturnValue(
-        chain([{ _id: '2026-08-01' }, { _id: '2026-08-02' }]),
-      );
-
-      await expect(calc(7)).resolves.toMatchObject({ workoutsCompleted: 2 });
-    });
-
-    it('scopes the session aggregation to the requested user and window', async () => {
-      trainingPlanModel.aggregate.mockReturnValue(chain([]));
+    // The plan collection must no longer be consulted for the workout count.
+    // If a union creeps back in, this is what says so.
+    it('does not read training plans to count workouts', async () => {
       workoutSessionModel.aggregate.mockReturnValue(chain([]));
 
       await calc(7);
 
-      const match = workoutSessionModel.aggregate.mock.calls[0][0][0].$match as
+      expect(trainingPlanModel.aggregate).not.toHaveBeenCalled();
+    });
+
+    it('scopes the session aggregation to the requested user and window', async () => {
+      workoutSessionModel.aggregate.mockReturnValue(chain([]));
+
+      await calc(7);
+
+      const match = capturedPipeline()[0].$match as
         | { userId?: Types.ObjectId; performedAt?: { $gte?: Date } }
         | undefined;
 
       expect(match?.userId?.toHexString()).toBe(userId);
       expect(match?.performedAt?.$gte).toBeInstanceOf(Date);
     });
-  });
 
-  describe('countWorkoutDays aggregation', () => {
-    it('walks the real days[].exercises[].sets[].history[] path', async () => {
-      physicalDataModel.find.mockReturnValue(chain([]));
-      physicalDataModel.findOne.mockReturnValue(chain(null));
-      trainingPlanModel.aggregate.mockReturnValue(chain([]));
+    it('groups by calendar day rather than by session', async () => {
+      workoutSessionModel.aggregate.mockReturnValue(chain([]));
 
       await calc(7);
 
-      const pipeline = capturedPipeline();
-      const unwound = pipeline
-        .filter((stage) => '$unwind' in stage)
-        .map((stage) => stage.$unwind);
+      // Two sessions on one day are one workout; grouping on the formatted
+      // date is what makes that true.
+      const group = capturedPipeline().find((stage) => '$group' in stage) as
+        | { $group: { _id: unknown } }
+        | undefined;
 
-      // Guards against silently returning 0 for everyone if a field is renamed
-      expect(unwound).toEqual([
-        '$days',
-        '$days.exercises',
-        '$days.exercises.sets',
-        '$days.exercises.sets.history',
-      ]);
-    });
-
-    it('scopes the aggregation to the requested user', async () => {
-      physicalDataModel.find.mockReturnValue(chain([]));
-      physicalDataModel.findOne.mockReturnValue(chain(null));
-      trainingPlanModel.aggregate.mockReturnValue(chain([]));
-
-      await calc(7);
-
-      const match = capturedPipeline()[0].$match;
-      expect(match?.userId).toBeInstanceOf(Types.ObjectId);
-      expect(match?.userId?.toHexString()).toBe(userId);
+      expect(JSON.stringify(group?.$group._id)).toContain('%Y-%m-%d');
     });
   });
 

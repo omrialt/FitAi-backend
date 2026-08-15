@@ -95,6 +95,44 @@ export class NodemailerService {
     });
   }
 
+  /**
+   * Operational alert to whoever runs the service — not a user-facing mail.
+   *
+   * Deliberately plain: no marketing shell, no call-to-action button, and the
+   * detail rendered as a table so it stays readable on a phone at 3am. Values
+   * are escaped because they include request paths and error messages, which
+   * can contain anything a caller sent.
+   */
+  async sendOperationalAlert(
+    to: string,
+    subject: string,
+    detail: Record<string, unknown>,
+  ): Promise<void> {
+    const rows = Object.entries(detail)
+      .map(([key, value]) => {
+        const rendered =
+          typeof value === 'string' ? value : JSON.stringify(value);
+        return `<tr>
+            <td style="padding:4px 12px 4px 0;vertical-align:top;color:#666;white-space:nowrap">${this.escape(key)}</td>
+            <td style="padding:4px 0;vertical-align:top"><code>${this.escape(rendered ?? 'null')}</code></td>
+          </tr>`;
+      })
+      .join('');
+
+    await this.send({
+      to,
+      subject: `[FitAi] ${subject}`,
+      html: `<div style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5">
+          <p style="margin:0 0 12px"><strong>${this.escape(subject)}</strong></p>
+          <table style="border-collapse:collapse">${rows}</table>
+          <p style="margin:16px 0 0;color:#888;font-size:12px">
+            Sent by FitAi because ALERT_EMAIL is configured. Repeats of the same
+            alert are suppressed for a cooldown period.
+          </p>
+        </div>`,
+    });
+  }
+
   // ─── internals ────────────────────────────────────────────────
 
   private async send(options: {
