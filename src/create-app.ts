@@ -13,6 +13,7 @@ import {
   RATE_LIMITED_PATHS,
   globalLimiter,
 } from './common/middleware/rate-limit';
+import { hasSharedRateLimitStore } from './common/middleware/upstash-rate-limit.store';
 
 export const DOCS_PATH = 'docs';
 
@@ -75,6 +76,18 @@ export async function createApp(): Promise<INestApplication> {
     expressApp.use(paths, limiter);
   }
   expressApp.use(globalLimiter);
+
+  // Worth saying out loud at boot: the two modes enforce different numbers.
+  // Shared means the configured limit is the real ceiling; per-instance means
+  // it is the ceiling *per warm lambda*, which on Vercel is a multiple of it.
+  if (hasSharedRateLimitStore()) {
+    logger.log('Rate limiting: shared Redis counter (limits are exact)');
+  } else {
+    logger.warn(
+      'Rate limiting: per-instance memory counter. Set UPSTASH_REDIS_REST_URL ' +
+        'and UPSTASH_REDIS_REST_TOKEN so all instances share one count.',
+    );
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
