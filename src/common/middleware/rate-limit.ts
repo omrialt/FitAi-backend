@@ -2,6 +2,8 @@ import { Logger } from '@nestjs/common';
 import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import type { Request, RequestHandler } from 'express';
 
+import { createRateLimitStore } from './upstash-rate-limit.store';
+
 /**
  * Request rate limiting.
  *
@@ -17,19 +19,31 @@ import type { Request, RequestHandler } from 'express';
  *   - `authLimiter` is deliberately tight and applies only to the credential
  *     endpoints, where a legitimate user makes a handful of attempts at most.
  *
- * Caveat worth knowing: the store is in-memory, so on Vercel each warm lambda
- * counts separately and the effective ceiling is (limit x live instances).
- * That still removes the single-instance flood, but a distributed store
- * (Redis/Upstash) is what makes the number exact.
+ * Where the count lives: with `UPSTASH_REDIS_REST_URL` and
+ * `UPSTASH_REDIS_REST_TOKEN` set, every limiter counts in Redis, so all Vercel
+ * instances share one counter and the ceiling is the number written below.
+ * Without them the count stays in process memory — the old behaviour, where
+ * each warm lambda counts separately and the effective ceiling is
+ * (limit x live instances). That is the right default for local dev and for a
+ * single-process container host, where there is only one instance anyway.
  */
 
 const logger = new Logger('RateLimit');
 
 const MINUTE = 60 * 1000;
 
-/** Shared behaviour: log the block, answer JSON in the app's error shape. */
+/**
+ * Shared behaviour: count in the shared store when one is configured, log the
+ * block, answer JSON in the app's error shape.
+ *
+ * Each call builds its own store instance on purpose. A store keeps the window
+ * length handed to it by `init()`, so one object shared between the 1-minute
+ * global limiter and the 60-minute register limiter would end up applying
+ * whichever window initialised last to both.
+ */
 function baseOptions(scope: string): Partial<Options> {
   return {
+    store: createRateLimitStore(),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     handler: (req: Request, res, _next, options) => {
