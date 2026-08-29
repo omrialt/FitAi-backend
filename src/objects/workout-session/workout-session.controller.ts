@@ -95,6 +95,18 @@ export class WorkoutSessionController {
     );
   }
 
+  /**
+   * Whether the recent block looks like accumulating fatigue. Same
+   * `@OwnsUserParam` as the other user-scoped reads, so a connected trainer
+   * can see it for their client.
+   */
+  @Get('user/:userId/fatigue')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getFatigue(@Param('userId') userId: string) {
+    return this.workoutStatsService.getFatigueSignal(userId);
+  }
+
   @Get(':id')
   @Roles('user', 'trainer', 'admin')
   findOne(@Param('id') id: string, @Request() req: AuthRequest) {

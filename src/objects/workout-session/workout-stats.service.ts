@@ -51,6 +51,26 @@ export interface WorkoutStats {
   personalBests: PersonalBest[];
 }
 
+export type FatigueLevel = 'insufficient' | 'ok' | 'watch' | 'deload';
+
+export interface FatigueSignal {
+  level: FatigueLevel;
+  /** Machine-readable reasons, so the client picks its own wording. */
+  reasons: (
+    | 'volume_dropping'
+    | 'effort_climbing'
+    | 'frequency_dropping'
+    | 'load_stalled'
+  )[];
+  /** Percent change in weekly volume, recent window vs the baseline before it. */
+  volumeChangePercent: number | null;
+  /** Mean RPE recently, and before. `null` until the user reports any. */
+  recentRpe: number | null;
+  baselineRpe: number | null;
+  recentSessions: number;
+  baselineSessions: number;
+}
+
 /** One session's best effort on one exercise — a point on the strength curve. */
 export interface ExerciseHistoryPoint {
   /** ISO day, not a timestamp: the curve's x-axis is the calendar. */
@@ -76,7 +96,7 @@ interface SessionRow {
   performedAt: Date;
   exercises?: {
     name: string;
-    sets?: { reps: number; weight: number }[];
+    sets?: { reps: number; weight: number; rpe?: number }[];
   }[];
 }
 
@@ -127,6 +147,160 @@ export class WorkoutStatsService {
       streak: this.buildStreak(sessions),
       adherence: this.buildAdherence(sessions, plans, windowDays),
       personalBests: this.buildPersonalBests(sessions),
+    };
+  }
+
+  // ─── fatigue ──────────────────────────────────────────────────
+
+  /**
+   * Whether the recent block looks like accumulating fatigue.
+   *
+   * Compares the last two weeks against the four before them, on three
+   * signals that mean different things together than apart: volume falling,
+   * perceived effort rising, and sessions being missed. Any one of them alone
+   * is a normal week — a deload week is *supposed* to drop volume, and a busy
+   * fortnight explains a missed session. Two together is a pattern.
+   *
+   * The first return value is the important one. `insufficient` is not a
+   * failure state and not an empty state: with a handful of sessions there is
+   * no baseline to compare against, and inventing a verdict from three data
+   * points is exactly how a feature like this loses the user's trust on first
+   * contact. RPE only began being collected on 2026-08-29, so this stays
+   * honest about how much it actually knows.
+   */
+  async getFatigueSignal(userId: string): Promise<FatigueSignal> {
+    if (!isValidObjectId(userId)) return this.emptyFatigue();
+
+    const since = new Date(Date.now() - 42 * DAY_MS);
+    const sessions = await this.sessionModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        performedAt: { $gte: since },
+      })
+      .sort({ performedAt: 1 })
+      .select('performedAt exercises')
+      .lean<SessionRow[]>()
+      .exec();
+
+    const recentFrom = Date.now() - 14 * DAY_MS;
+    const recent = sessions.filter(
+      (s) => new Date(s.performedAt).getTime() >= recentFrom,
+    );
+    const baseline = sessions.filter(
+      (s) => new Date(s.performedAt).getTime() < recentFrom,
+    );
+
+    // Two sessions in each window is the floor for a comparison to mean
+    // anything at all; below that the answer is "ask me later".
+    if (recent.length < 2 || baseline.length < 4) {
+      return {
+        ...this.emptyFatigue(),
+        recentSessions: recent.length,
+        baselineSessions: baseline.length,
+      };
+    }
+
+    // Per week, not per window: the baseline is twice as long, and comparing
+    // raw totals would report a 50% "drop" for identical training.
+    const recentVolumePerWeek = this.totalVolume(recent) / 2;
+    const baselineVolumePerWeek = this.totalVolume(baseline) / 4;
+    const recentPerWeek = recent.length / 2;
+    const baselinePerWeek = baseline.length / 4;
+
+    const volumeChangePercent =
+      baselineVolumePerWeek > 0
+        ? Math.round(
+            ((recentVolumePerWeek - baselineVolumePerWeek) /
+              baselineVolumePerWeek) *
+              100,
+          )
+        : null;
+
+    const recentRpe = this.meanRpe(recent);
+    const baselineRpe = this.meanRpe(baseline);
+
+    const reasons: FatigueSignal['reasons'] = [];
+
+    if (volumeChangePercent !== null && volumeChangePercent <= -15) {
+      reasons.push('volume_dropping');
+    }
+    // Half a point on a ten-point scale is about the smallest move that is not
+    // noise in self-reported effort.
+    if (
+      recentRpe !== null &&
+      baselineRpe !== null &&
+      recentRpe - baselineRpe >= 0.5
+    ) {
+      reasons.push('effort_climbing');
+    }
+    if (recentPerWeek < baselinePerWeek - 0.5) {
+      reasons.push('frequency_dropping');
+    }
+    // Working harder for the same or less work is the classic signature.
+    if (
+      recentRpe !== null &&
+      baselineRpe !== null &&
+      recentRpe - baselineRpe >= 0.3 &&
+      volumeChangePercent !== null &&
+      volumeChangePercent <= 5
+    ) {
+      reasons.push('load_stalled');
+    }
+
+    const level: FatigueLevel =
+      reasons.length >= 2 ? 'deload' : reasons.length === 1 ? 'watch' : 'ok';
+
+    return {
+      level,
+      reasons,
+      volumeChangePercent,
+      recentRpe,
+      baselineRpe,
+      recentSessions: recent.length,
+      baselineSessions: baseline.length,
+    };
+  }
+
+  private totalVolume(sessions: SessionRow[]): number {
+    let total = 0;
+    for (const session of sessions) {
+      for (const exercise of session.exercises ?? []) {
+        for (const set of exercise.sets ?? []) {
+          total += (set.weight || 0) * (set.reps || 0);
+        }
+      }
+    }
+    return total;
+  }
+
+  /** `null` rather than 0 when nobody reported RPE — absent is not "easy". */
+  private meanRpe(sessions: SessionRow[]): number | null {
+    let sum = 0;
+    let count = 0;
+
+    for (const session of sessions) {
+      for (const exercise of session.exercises ?? []) {
+        for (const set of exercise.sets ?? []) {
+          if (typeof set.rpe === 'number') {
+            sum += set.rpe;
+            count += 1;
+          }
+        }
+      }
+    }
+
+    return count === 0 ? null : Math.round((sum / count) * 10) / 10;
+  }
+
+  private emptyFatigue(): FatigueSignal {
+    return {
+      level: 'insufficient',
+      reasons: [],
+      volumeChangePercent: null,
+      recentRpe: null,
+      baselineRpe: null,
+      recentSessions: 0,
+      baselineSessions: 0,
     };
   }
 
