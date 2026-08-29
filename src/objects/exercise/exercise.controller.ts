@@ -14,6 +14,7 @@ import { ExerciseService } from './exercise.service';
 import {
   ExerciseAlternativesDto,
   SearchExercisesDto,
+  SubstituteExercisesDto,
 } from '../../interfaces/exercise.interfaces';
 import { MUSCLE_GROUPS, EQUIPMENT } from './exercise.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -47,6 +48,25 @@ export class ExerciseController {
   @Roles('user', 'trainer', 'admin')
   meta() {
     return { muscleGroups: MUSCLE_GROUPS, equipment: EQUIPMENT };
+  }
+
+  /**
+   * Substitutes for a plan's free-text exercise name.
+   *
+   * Declared before `:slug` — Express matches in registration order, so
+   * otherwise this binds `slug: 'substitutes'` and 404s.
+   *
+   * A name the catalogue does not recognise returns `matched: null` with an
+   * empty list and a 200, not a 404: to the caller that means "no button for
+   * this exercise", which is an ordinary outcome and not a failure.
+   */
+  @Get('substitutes')
+  @Roles('user', 'trainer', 'admin')
+  substitutes(@Query() query: SubstituteExercisesDto) {
+    return this.exerciseService.alternativesForName(query.name, {
+      equipment: query.equipment,
+      limit: query.limit,
+    });
   }
 
   @Get(':slug')

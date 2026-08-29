@@ -96,6 +96,65 @@ export class ExerciseService {
   }
 
   /**
+   * Maps a free-text exercise name from a training plan onto a catalogue row.
+   *
+   * Plans store whatever the user typed, so this is the bridge every
+   * catalogue-powered feature has to cross. It is deliberately strict: an
+   * exact name in either language, then an exact alias, then nothing. No
+   * fuzzy scoring and no partial matching — offering "Barbell Row" as the
+   * substitute for someone's "Row Machine" because the strings overlap is
+   * worse than offering nothing, because the user cannot see why it was
+   * wrong.
+   *
+   * The caller's contract is that `null` is normal and means "hide the
+   * feature for this exercise", never "show an error".
+   */
+  async resolveByName(name: string): Promise<Exercise | null> {
+    const term = name?.trim();
+    if (!term) return null;
+
+    // Anchored and case-insensitive: an exact string, not a substring.
+    const exact = new RegExp(`^${escapeRegex(term)}$`, 'i');
+
+    return this.exerciseModel
+      .findOne({
+        $or: [{ nameHe: exact }, { nameEn: exact }, { aliases: exact }],
+      })
+      .lean<Exercise>()
+      .exec();
+  }
+
+  /**
+   * Substitutes for a free-text exercise name, in one call.
+   *
+   * The session screen has a name and needs alternatives; making it resolve
+   * first and then ask again would be two round trips on a screen used
+   * between sets, with a phone on a bench.
+   */
+  async alternativesForName(
+    name: string,
+    options: { equipment?: Equipment; limit?: number } = {},
+  ): Promise<{ matched: Exercise | null; alternatives: Exercise[] }> {
+    const matched = await this.resolveByName(name);
+    if (!matched) return { matched: null, alternatives: [] };
+
+    const filter: FilterQuery<Exercise> = {
+      slug: { $ne: matched.slug },
+      primaryMuscle: matched.primaryMuscle,
+    };
+    if (options.equipment) filter.equipment = options.equipment;
+
+    const alternatives = await this.exerciseModel
+      .find(filter)
+      .sort({ isCompound: -1, nameEn: 1 })
+      .limit(Math.min(Math.max(options.limit ?? 6, 1), MAX_LIMIT))
+      .lean<Exercise[]>()
+      .exec();
+
+    return { matched, alternatives };
+  }
+
+  /**
    * Other exercises that hit the same primary muscle.
    *
    * The catalogue's whole point: with a shared vocabulary this is one query,

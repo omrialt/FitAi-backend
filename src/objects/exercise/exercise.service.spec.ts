@@ -112,6 +112,80 @@ describe('ExerciseService', () => {
     });
   });
 
+  describe('resolveByName', () => {
+    it('is null for an empty or blank name, without querying', async () => {
+      expect(await service.resolveByName('   ')).toBeNull();
+      expect(model.findOne).not.toHaveBeenCalled();
+    });
+
+    it('matches a name exactly, in either language or an alias', async () => {
+      model.findOne.mockReturnValue(findOneChain({ slug: 'deadlift' }));
+
+      await service.resolveByName('הרמת מתים');
+
+      const filter = (model.findOne.mock.calls as unknown[][])[0][0] as {
+        $or: { [k: string]: RegExp }[];
+      };
+      expect(filter.$or.map((c) => Object.keys(c)[0])).toEqual([
+        'nameHe',
+        'nameEn',
+        'aliases',
+      ]);
+      // Anchored: an exact string, never a substring.
+      expect(filter.$or[0].nameHe.source).toBe('^הרמת מתים$');
+      expect(filter.$or[0].nameHe.flags).toContain('i');
+    });
+
+    it('escapes regex characters in free text from a plan', async () => {
+      model.findOne.mockReturnValue(findOneChain(null));
+
+      await service.resolveByName('Row (bent)');
+
+      const filter = (model.findOne.mock.calls as unknown[][])[0][0] as {
+        $or: { [k: string]: RegExp }[];
+      };
+      expect(() => new RegExp(filter.$or[0].nameHe.source)).not.toThrow();
+    });
+  });
+
+  describe('alternativesForName', () => {
+    // `null` is an ordinary outcome meaning "hide the button", not an error.
+    it('returns no match and no alternatives for an unknown name', async () => {
+      model.findOne.mockReturnValue(findOneChain(null));
+
+      const result = await service.alternativesForName('סחיבת צמיג');
+
+      expect(result).toEqual({ matched: null, alternatives: [] });
+      expect(model.find).not.toHaveBeenCalled();
+    });
+
+    it('finds same-muscle substitutes for a recognised name', async () => {
+      model.findOne.mockReturnValue(
+        findOneChain({ slug: 'back-squat', primaryMuscle: 'quads' }),
+      );
+      model.find.mockReturnValue(chain([{ slug: 'leg-press' }]));
+
+      const result = await service.alternativesForName('סקוואט');
+
+      expect(findFilter()).toEqual({
+        slug: { $ne: 'back-squat' },
+        primaryMuscle: 'quads',
+      });
+      expect(result.matched?.slug).toBe('back-squat');
+      expect(result.alternatives).toHaveLength(1);
+    });
+
+    it('narrows to the equipment that is actually free', async () => {
+      model.findOne.mockReturnValue(
+        findOneChain({ slug: 'back-squat', primaryMuscle: 'quads' }),
+      );
+
+      await service.alternativesForName('סקוואט', { equipment: 'dumbbell' });
+
+      expect(findFilter().equipment).toBe('dumbbell');
+    });
+  });
+
   describe('alternatives', () => {
     it('is empty for a slug that does not exist', async () => {
       model.findOne.mockReturnValue(findOneChain(null));
