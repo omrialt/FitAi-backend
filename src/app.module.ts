@@ -20,6 +20,7 @@ import { PhysicalDataModule } from './objects/physical-data/physical-data.module
 import { ProgressStatsModule } from './objects/progress-stats/progress-stats.module';
 import { WorkoutSessionModule } from './objects/workout-session/workout-session.module';
 import { ExerciseModule } from './objects/exercise/exercise.module';
+import { AiReviewModule } from './objects/ai-review/ai-review.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
@@ -62,6 +63,9 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     // Shared reference content: read-only for every signed-in user, seeded by
     // `npm run seed:exercises` rather than written through the API.
     ExerciseModule,
+    // Inert unless ANTHROPIC_API_KEY is set: the first thing here that costs
+    // money per use does not switch itself on merely by being deployed.
+    AiReviewModule,
     CalendarSyncModule,
     TrainerConnectionModule,
   ],

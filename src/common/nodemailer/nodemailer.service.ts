@@ -133,6 +133,36 @@ export class NodemailerService {
     });
   }
 
+  /**
+   * The weekly training review.
+   *
+   * The body is model-written text, so it is escaped and rendered as
+   * paragraphs rather than interpolated as HTML — a review is generated
+   * content, and generated content is never markup.
+   */
+  async sendWeeklyReview(to: string, body: string): Promise<void> {
+    const paragraphs = body
+      .split(/\n{2,}/)
+      .filter(Boolean)
+      .map(
+        (part) =>
+          `<p style="margin:0 0 14px;white-space:pre-line">${this.escape(part)}</p>`,
+      )
+      .join('');
+
+    await this.send({
+      to,
+      subject: 'הסקירה השבועית שלך ב‑FitAi',
+      html: `<div dir="rtl" style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.7;max-width:560px">
+          <p style="margin:0 0 18px;font-weight:700;font-size:17px">הסקירה השבועית שלך</p>
+          ${paragraphs}
+          <p style="margin:20px 0 0;color:#888;font-size:12px">
+            נכתב אוטומטית מתוך האימונים שתיעדת ב‑FitAi.
+          </p>
+        </div>`,
+    });
+  }
+
   // ─── internals ────────────────────────────────────────────────
 
   private async send(options: {

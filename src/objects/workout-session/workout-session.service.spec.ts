@@ -41,6 +41,7 @@ describe('WorkoutSessionService', () => {
     create: jest.Mock<Promise<unknown>, [CreateArg]>;
     find: jest.Mock<unknown, [Record<string, unknown>]>;
     findById: jest.Mock;
+    findOne: jest.Mock;
     aggregate: jest.Mock;
   };
 
@@ -55,6 +56,7 @@ describe('WorkoutSessionService', () => {
         .fn<unknown, [Record<string, unknown>]>()
         .mockReturnValue(chain([])),
       findById: jest.fn(),
+      findOne: jest.fn().mockReturnValue({ exec: () => Promise.resolve(null) }),
       aggregate: jest.fn().mockReturnValue({ exec: () => Promise.resolve([]) }),
     };
 
@@ -79,6 +81,73 @@ describe('WorkoutSessionService', () => {
       expect(sessionModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: OWNER, source: 'app' }),
       );
+    });
+
+    /**
+     * The property that makes an offline queue safe to retry.
+     *
+     * A request can succeed on the server and still fail on the wire, and the
+     * phone cannot tell the difference — so a resend must not produce a second
+     * copy of a workout that already happened.
+     */
+    it('returns the existing session instead of duplicating a replayed clientId', async () => {
+      const already = { _id: SESSION_ID, clientId: 'abcdefgh-1234' };
+      sessionModel.findOne.mockReturnValue({
+        exec: () => Promise.resolve(already),
+      });
+
+      const result = await service.create(OWNER, {
+        exercises: [],
+        clientId: 'abcdefgh-1234',
+      });
+
+      expect(result).toBe(already);
+      expect(sessionModel.create).not.toHaveBeenCalled();
+    });
+
+    it('creates normally when the clientId has not been seen', async () => {
+      await service.create(OWNER, {
+        exercises: [],
+        clientId: 'abcdefgh-1234',
+      });
+
+      expect(sessionModel.findOne).toHaveBeenCalledWith({
+        userId: OWNER,
+        clientId: 'abcdefgh-1234',
+      });
+      expect(sessionModel.create).toHaveBeenCalled();
+    });
+
+    it('does not look for a twin when no clientId was sent', async () => {
+      await service.create(OWNER, { exercises: [] });
+      expect(sessionModel.findOne).not.toHaveBeenCalled();
+    });
+
+    // The pre-read cannot catch two requests racing on two lambdas; the unique
+    // index can, and its winner is the right answer to return.
+    it('yields to the racing twin when the unique index fires', async () => {
+      const winner = { _id: SESSION_ID, clientId: 'abcdefgh-1234' };
+      sessionModel.create.mockRejectedValueOnce(
+        Object.assign(new Error('E11000 duplicate key'), { code: 11000 }),
+      );
+      sessionModel.findOne
+        .mockReturnValueOnce({ exec: () => Promise.resolve(null) })
+        .mockReturnValueOnce({ exec: () => Promise.resolve(winner) });
+
+      const result = await service.create(OWNER, {
+        exercises: [],
+        clientId: 'abcdefgh-1234',
+      });
+
+      expect(result).toBe(winner);
+    });
+
+    it('rethrows a write failure that is not a duplicate', async () => {
+      sessionModel.create.mockRejectedValueOnce(new Error('disk on fire'));
+
+      await expect(
+        service.create(OWNER, { exercises: [], clientId: 'abcdefgh-1234' }),
+      ).rejects.toThrow('disk on fire');
     });
 
     it('defaults performedAt to now when omitted', async () => {

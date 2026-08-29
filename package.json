@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@anatine/zod-nestjs": "^2.0.12",
+    "@anthropic-ai/sdk": "^0.122.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",

@@ -40,6 +40,25 @@ export class SearchExercisesDto {
   limit?: number;
 }
 
+export class SubstituteExercisesDto {
+  /** The name exactly as the training plan stores it. */
+  @IsString()
+  @MaxLength(120)
+  name!: string;
+
+  /** Narrows to what is actually free in the gym right now. */
+  @IsOptional()
+  @IsIn(EQUIPMENT)
+  equipment?: (typeof EQUIPMENT)[number];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  limit?: number;
+}
+
 export class ExerciseAlternativesDto {
   @IsOptional()
   @Type(() => Number)

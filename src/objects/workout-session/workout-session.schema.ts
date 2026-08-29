@@ -50,6 +50,16 @@ export const workoutSessionSchema = z.object({
     .union([z.string(), z.object({}).passthrough()])
     .nullable()
     .optional(),
+  /**
+   * Idempotency key minted by the client before the first send attempt.
+   *
+   * This is what makes offline logging safe. A queued session can be sent,
+   * time out after the server already wrote it, and be retried — without this
+   * the user ends up with the same workout twice and no way to tell which is
+   * real. Optional because sessions logged online predate it and do not need
+   * it.
+   */
+  clientId: z.string().min(8).max(64).optional(),
   planTitle: z.string().optional(),
   dayName: z.string().optional(),
   performedAt: z.date(),
@@ -85,6 +95,7 @@ export const WorkoutSessionSchema = new Schema(
     planId: { type: Schema.Types.ObjectId, ref: 'TrainingPlan', default: null },
     // Kept alongside planId so a deleted plan does not turn the log into rows
     // of "(unknown)".
+    clientId: { type: String },
     planTitle: { type: String },
     dayName: { type: String },
     performedAt: { type: Date, required: true },
@@ -105,6 +116,22 @@ export const WorkoutSessionSchema = new Schema(
 WorkoutSessionSchema.index({ userId: 1, performedAt: -1 });
 WorkoutSessionSchema.index({ planId: 1 });
 WorkoutSessionSchema.index({ 'exercises.name': 1 });
+
+/**
+ * The constraint that makes a retried sync harmless.
+ *
+ * Enforced in the database rather than only in the service, because two
+ * requests from the same phone can arrive concurrently on two lambdas and a
+ * read-then-write check would let both through. Partial, so the sessions that
+ * predate offline logging — all of which have no `clientId` — are unaffected.
+ */
+WorkoutSessionSchema.index(
+  { userId: 1, clientId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { clientId: { $type: 'string' } },
+  },
+);
 
 /**
  * Makes the backfill re-runnable. A migrated session is uniquely identified by

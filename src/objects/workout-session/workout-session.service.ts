@@ -28,22 +28,63 @@ export class WorkoutSessionService {
     private readonly sessionModel: Model<WorkoutSessionDocument>,
   ) {}
 
+  /**
+   * Files a completed workout.
+   *
+   * Idempotent when the caller supplies a `clientId`: sending the same session
+   * twice returns the first one instead of creating a second. That is what
+   * lets an offline queue retry safely — a request can succeed on the server
+   * and still fail on the wire, and the phone has no way to tell the
+   * difference.
+   *
+   * The check is belt and braces: the pre-read catches the ordinary retry and
+   * keeps the response fast, and the unique index catches the case the
+   * pre-read cannot — two requests racing on two lambdas.
+   */
   async create(
     userId: string,
     dto: CreateWorkoutSessionDto,
   ): Promise<WorkoutSessionDocument> {
-    const session = await this.sessionModel.create({
-      ...dto,
-      userId,
-      planId: dto.planId ?? null,
-      // A client clock can be wrong or hostile; a session dated in the future
-      // would poison every rolling-window statistic, so it is clamped.
-      performedAt: this.resolvePerformedAt(dto.performedAt),
-      source: 'app',
-    });
+    if (dto.clientId) {
+      const existing = await this.sessionModel
+        .findOne({ userId, clientId: dto.clientId })
+        .exec();
 
-    this.logger.debug(`Logged session ${session._id.toString()} for ${userId}`);
-    return session;
+      if (existing) {
+        this.logger.debug(
+          `Replayed session ${existing._id.toString()} for ${userId}`,
+        );
+        return existing;
+      }
+    }
+
+    try {
+      const session = await this.sessionModel.create({
+        ...dto,
+        userId,
+        planId: dto.planId ?? null,
+        // A client clock can be wrong or hostile; a session dated in the future
+        // would poison every rolling-window statistic, so it is clamped.
+        performedAt: this.resolvePerformedAt(dto.performedAt),
+        source: 'app',
+      });
+
+      this.logger.debug(
+        `Logged session ${session._id.toString()} for ${userId}`,
+      );
+      return session;
+    } catch (error) {
+      // 11000 is the unique index firing, which here means the racing twin
+      // won. Its document is the right answer, so return it rather than
+      // failing a workout the user has already finished.
+      if (dto.clientId && (error as { code?: number })?.code === 11000) {
+        const winner = await this.sessionModel
+          .findOne({ userId, clientId: dto.clientId })
+          .exec();
+        if (winner) return winner;
+      }
+      throw error;
+    }
   }
 
   /** One user's sessions, newest first. */

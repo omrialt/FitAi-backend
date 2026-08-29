@@ -26,9 +26,26 @@ function daysAgo(n: number): Date {
 
 function session(
   performedAt: Date,
-  exercises: { name: string; sets: { reps: number; weight: number }[] }[] = [],
+  exercises: {
+    name: string;
+    sets: { reps: number; weight: number; rpe?: number }[];
+  }[] = [],
 ) {
   return { performedAt, exercises };
+}
+
+/** A block of identical sessions, one every `everyDays` across `days`. */
+function block(
+  fromDaysAgo: number,
+  toDaysAgo: number,
+  everyDays: number,
+  set: { reps: number; weight: number; rpe?: number },
+) {
+  const out = [];
+  for (let d = fromDaysAgo; d > toDaysAgo; d -= everyDays) {
+    out.push(session(daysAgo(d), [{ name: 'Squat', sets: [set] }]));
+  }
+  return out;
 }
 
 describe('WorkoutStatsService', () => {
@@ -402,6 +419,116 @@ describe('WorkoutStatsService', () => {
       const history = await service.getExerciseHistory(USER);
       expect(history.exercise).toBe('');
       expect(history.points).toEqual([]);
+    });
+  });
+
+  describe('fatigue signal', () => {
+    it('says nothing for a malformed user id', async () => {
+      const signal = await service.getFatigueSignal('not-an-id');
+      expect(signal.level).toBe('insufficient');
+      expect(sessionModel.find).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The first answer this feature gives most users, and the one it must get
+     * right: three data points cannot support a verdict, and inventing one is
+     * how a signal like this loses trust on first contact.
+     */
+    it('refuses to judge without a baseline to compare against', async () => {
+      withData([
+        session(daysAgo(3), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 100 }] },
+        ]),
+        session(daysAgo(1), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 100 }] },
+        ]),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.level).toBe('insufficient');
+      expect(signal.recentSessions).toBe(2);
+      expect(signal.baselineSessions).toBe(0);
+    });
+
+    it('is calm when training is steady', async () => {
+      withData([
+        ...block(40, 14, 3, { reps: 5, weight: 100, rpe: 7 }),
+        ...block(13, 0, 3, { reps: 5, weight: 100, rpe: 7 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.level).toBe('ok');
+      expect(signal.reasons).toEqual([]);
+    });
+
+    // The comparison is per week, not per window — the baseline is twice as
+    // long, so raw totals would report a 50% drop for identical training.
+    it('normalises the windows by length', async () => {
+      withData([
+        ...block(40, 14, 3, { reps: 5, weight: 100 }),
+        ...block(13, 0, 3, { reps: 5, weight: 100 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(Math.abs(signal.volumeChangePercent ?? 999)).toBeLessThan(15);
+    });
+
+    it('flags a single symptom as something to watch', async () => {
+      withData([
+        ...block(40, 14, 3, { reps: 10, weight: 100 }),
+        ...block(13, 0, 3, { reps: 4, weight: 100 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.level).toBe('watch');
+      expect(signal.reasons).toContain('volume_dropping');
+    });
+
+    // Working harder for less work is the classic signature, and it is two
+    // symptoms rather than one.
+    it('calls for a deload when volume falls while effort climbs', async () => {
+      withData([
+        ...block(40, 14, 3, { reps: 10, weight: 100, rpe: 7 }),
+        ...block(13, 0, 3, { reps: 4, weight: 100, rpe: 9 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.level).toBe('deload');
+      expect(signal.reasons).toContain('volume_dropping');
+      expect(signal.reasons).toContain('effort_climbing');
+      expect(signal.recentRpe).toBe(9);
+      expect(signal.baselineRpe).toBe(7);
+    });
+
+    // Absent is not "easy": reporting 0 would make every un-reported block
+    // look like the easiest training of the user's life.
+    it('leaves RPE null when nobody reported any', async () => {
+      withData([
+        ...block(40, 14, 3, { reps: 5, weight: 100 }),
+        ...block(13, 0, 3, { reps: 5, weight: 100 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.recentRpe).toBeNull();
+      expect(signal.baselineRpe).toBeNull();
+      expect(signal.reasons).not.toContain('effort_climbing');
+    });
+
+    it('notices sessions being missed', async () => {
+      withData([
+        ...block(40, 14, 2, { reps: 5, weight: 100 }),
+        ...block(13, 0, 7, { reps: 5, weight: 100 }),
+      ]);
+
+      const signal = await service.getFatigueSignal(USER);
+
+      expect(signal.reasons).toContain('frequency_dropping');
     });
   });
 });
