@@ -21,7 +21,9 @@
     "migrate:workout-sessions": "ts-node scripts/backfill-workout-sessions.ts",
     "migrate:workout-sessions:dry": "ts-node scripts/backfill-workout-sessions.ts --dry-run",
     "migrate:email-verified": "ts-node scripts/backfill-email-verified.ts",
-    "migrate:email-verified:dry": "ts-node scripts/backfill-email-verified.ts --dry-run"
+    "migrate:email-verified:dry": "ts-node scripts/backfill-email-verified.ts --dry-run",
+    "seed:exercises": "ts-node scripts/seed-exercises.ts",
+    "seed:exercises:dry": "ts-node scripts/seed-exercises.ts --dry-run"
   },
   "dependencies": {
     "@anatine/zod-nestjs": "^2.0.12",
