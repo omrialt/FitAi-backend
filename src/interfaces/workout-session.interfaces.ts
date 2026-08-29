@@ -11,6 +11,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -68,6 +69,16 @@ export class SessionExerciseDto {
 }
 
 export class CreateWorkoutSessionDto {
+  /**
+   * Idempotency key minted by the client. Present only for sessions that went
+   * through the offline queue; sending the same one twice is a no-op.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  clientId?: string;
+
   @IsOptional()
   @IsMongoId()
   planId?: string;
