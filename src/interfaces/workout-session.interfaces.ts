@@ -118,6 +118,25 @@ export class WorkoutStatsQueryDto {
   days?: number;
 }
 
+export class ExerciseHistoryQueryDto {
+  /**
+   * Which exercise to plot. Omitted means "the one trained most often", so the
+   * chart opens on something rather than on an empty state.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  /** Bounds the curve only — the exercise picker stays all-time. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(7)
+  @Max(3650)
+  days?: number;
+}
+
 export class ListWorkoutSessionsDto {
   @IsOptional()
   @IsDateString()
