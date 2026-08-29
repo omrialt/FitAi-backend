@@ -51,6 +51,27 @@ export interface WorkoutStats {
   personalBests: PersonalBest[];
 }
 
+/** One session's best effort on one exercise — a point on the strength curve. */
+export interface ExerciseHistoryPoint {
+  /** ISO day, not a timestamp: the curve's x-axis is the calendar. */
+  date: string;
+  weight: number;
+  reps: number;
+  estimatedOneRepMax: number;
+  /** Weight x reps across every set of that exercise that day. */
+  volume: number;
+  sets: number;
+  /** True on the day this became the best e1RM to date. */
+  isPersonalBest: boolean;
+}
+
+export interface ExerciseHistory {
+  exercise: string;
+  points: ExerciseHistoryPoint[];
+  /** Every exercise the user has logged, so the picker offers real options. */
+  availableExercises: string[];
+}
+
 interface SessionRow {
   performedAt: Date;
   exercises?: {
@@ -107,6 +128,168 @@ export class WorkoutStatsService {
       adherence: this.buildAdherence(sessions, plans, windowDays),
       personalBests: this.buildPersonalBests(sessions),
     };
+  }
+
+  // ─── strength curve ───────────────────────────────────────────
+
+  /**
+   * One exercise's progression over time, one point per day trained.
+   *
+   * The personal-bests card answers "what is my best squat"; this answers the
+   * question that actually drives training decisions — "am I still getting
+   * stronger, or have I been stuck since May". A single number cannot show a
+   * plateau.
+   *
+   * Collapsed per day rather than per set, because five sets on one day are one
+   * data point about that day's strength, not five. The day's best set by
+   * estimated 1RM represents it, for the same reason personal bests rank that
+   * way: otherwise a heavy double and a hard set of eight are incomparable.
+   *
+   * `availableExercises` rides along on every call so the picker can be built
+   * from what the user has actually logged, without a second round trip on a
+   * screen that has just opened.
+   */
+  async getExerciseHistory(
+    userId: string,
+    exercise?: string,
+    windowDays?: number,
+  ): Promise<ExerciseHistory> {
+    if (!isValidObjectId(userId)) {
+      return { exercise: exercise ?? '', points: [], availableExercises: [] };
+    }
+
+    const filter: Record<string, unknown> = {
+      userId: new Types.ObjectId(userId),
+    };
+    // The window bounds the curve, not the exercise list: narrowing to 90 days
+    // must not make an exercise disappear from the picker that selected it.
+    if (windowDays) {
+      filter.performedAt = { $gte: new Date(Date.now() - windowDays * DAY_MS) };
+    }
+
+    const [sessions, allNames] = await Promise.all([
+      this.sessionModel
+        .find(filter)
+        .sort({ performedAt: 1 })
+        .select('performedAt exercises')
+        .lean<SessionRow[]>()
+        .exec(),
+      this.sessionModel
+        .distinct('exercises.name', { userId: new Types.ObjectId(userId) })
+        .exec() as Promise<string[]>,
+    ]);
+
+    const availableExercises = [...allNames]
+      .filter((name): name is string => typeof name === 'string' && !!name)
+      .sort((a, b) => a.localeCompare(b));
+
+    // No exercise asked for means "the one worth looking at first": whatever
+    // has the most logged days, which is the user's main lift.
+    const target = exercise ?? this.mostLoggedExercise(sessions);
+    if (!target) {
+      return { exercise: '', points: [], availableExercises };
+    }
+
+    return {
+      exercise: target,
+      points: this.buildExercisePoints(sessions, target),
+      availableExercises,
+    };
+  }
+
+  /** Case-insensitive: "Bench Press" and "bench press" are one exercise. */
+  private matches(name: string, target: string): boolean {
+    return name.trim().toLowerCase() === target.trim().toLowerCase();
+  }
+
+  private mostLoggedExercise(sessions: SessionRow[]): string | null {
+    // Keyed case-insensitively but carrying the name as the user first wrote
+    // it, so the picker shows "Bench Press" rather than "bench press".
+    const seen = new Map<string, { name: string; days: Set<string> }>();
+
+    for (const session of sessions) {
+      const day = this.dayKey(session.performedAt);
+
+      for (const exercise of session.exercises ?? []) {
+        if (!exercise.name) continue;
+
+        const key = exercise.name.trim().toLowerCase();
+        const entry = seen.get(key) ?? { name: exercise.name, days: new Set() };
+        entry.days.add(day);
+        seen.set(key, entry);
+      }
+    }
+
+    let winner: string | null = null;
+    let best = 0;
+    for (const entry of seen.values()) {
+      if (entry.days.size > best) {
+        best = entry.days.size;
+        winner = entry.name;
+      }
+    }
+
+    return winner;
+  }
+
+  private buildExercisePoints(
+    sessions: SessionRow[],
+    target: string,
+  ): ExerciseHistoryPoint[] {
+    const byDay = new Map<string, ExerciseHistoryPoint>();
+
+    for (const session of sessions) {
+      const day = this.dayKey(session.performedAt);
+
+      for (const exercise of session.exercises ?? []) {
+        if (!exercise.name || !this.matches(exercise.name, target)) continue;
+
+        for (const set of exercise.sets ?? []) {
+          if (!set.weight || !set.reps) continue;
+
+          const e1rm = this.epley(set.weight, set.reps);
+          const held = byDay.get(day);
+
+          if (!held) {
+            byDay.set(day, {
+              date: day,
+              weight: set.weight,
+              reps: set.reps,
+              estimatedOneRepMax: e1rm,
+              volume: set.weight * set.reps,
+              sets: 1,
+              isPersonalBest: false,
+            });
+            continue;
+          }
+
+          held.volume += set.weight * set.reps;
+          held.sets += 1;
+          if (e1rm > held.estimatedOneRepMax) {
+            held.weight = set.weight;
+            held.reps = set.reps;
+            held.estimatedOneRepMax = e1rm;
+          }
+        }
+      }
+    }
+
+    const points = [...byDay.values()].sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    // Marked in one forward pass: a day is a PR only against what came before
+    // it, so the flags read as history rather than as hindsight.
+    let ceiling = 0;
+    for (const point of points) {
+      point.volume = Math.round(point.volume * 10) / 10;
+      if (point.estimatedOneRepMax > ceiling) {
+        point.isPersonalBest = true;
+        ceiling = point.estimatedOneRepMax;
+      }
+    }
+
+    return points;
   }
 
   // ─── streaks ──────────────────────────────────────────────────

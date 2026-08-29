@@ -33,7 +33,7 @@ function session(
 
 describe('WorkoutStatsService', () => {
   let service: WorkoutStatsService;
-  let sessionModel: { find: jest.Mock };
+  let sessionModel: { find: jest.Mock; distinct: jest.Mock };
   let planModel: { find: jest.Mock };
 
   const withData = (sessions: unknown[], plans: unknown[] = []) => {
@@ -42,7 +42,10 @@ describe('WorkoutStatsService', () => {
   };
 
   beforeEach(async () => {
-    sessionModel = { find: jest.fn().mockReturnValue(chain([])) };
+    sessionModel = {
+      find: jest.fn().mockReturnValue(chain([])),
+      distinct: jest.fn().mockReturnValue({ exec: () => Promise.resolve([]) }),
+    };
     planModel = { find: jest.fn().mockReturnValue(chain([])) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -211,6 +214,194 @@ describe('WorkoutStatsService', () => {
       expect(personalBests[0].achievedAt.toISOString()).toBe(
         when.toISOString(),
       );
+    });
+  });
+  describe('exercise history', () => {
+    /** Typed accessors for the mongoose filters the service passed down. */
+    const findFilter = (call: number): Record<string, unknown> =>
+      (sessionModel.find.mock.calls as unknown[][])[call][0] as Record<
+        string,
+        unknown
+      >;
+
+    const distinctFilter = (call: number): Record<string, unknown> =>
+      (sessionModel.distinct.mock.calls as unknown[][])[call][1] as Record<
+        string,
+        unknown
+      >;
+
+    const withNames = (names: string[]) =>
+      sessionModel.distinct.mockReturnValue({
+        exec: () => Promise.resolve(names),
+      });
+
+    it('returns nothing for a malformed user id without querying', async () => {
+      const history = await service.getExerciseHistory('not-an-id', 'Squat');
+      expect(history.points).toEqual([]);
+      expect(history.availableExercises).toEqual([]);
+      expect(sessionModel.find).not.toHaveBeenCalled();
+    });
+
+    it('plots one point per day trained, oldest first', async () => {
+      withNames(['Squat']);
+      withData([
+        session(daysAgo(20), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 100 }] },
+        ]),
+        session(daysAgo(6), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 110 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Squat');
+
+      expect(points).toHaveLength(2);
+      expect(points[0].date < points[1].date).toBe(true);
+      expect(points[1].weight).toBe(110);
+    });
+
+    // Five sets on one day describe that day's strength once, not five times —
+    // otherwise a high-volume day looks like a week of progress.
+    it('collapses a day to its best set but sums the whole day volume', async () => {
+      withNames(['Squat']);
+      withData([
+        session(daysAgo(3), [
+          {
+            name: 'Squat',
+            sets: [
+              { reps: 5, weight: 100 },
+              { reps: 3, weight: 120 },
+              { reps: 8, weight: 80 },
+            ],
+          },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Squat');
+
+      expect(points).toHaveLength(1);
+      expect(points[0].sets).toBe(3);
+      expect(points[0].volume).toBe(5 * 100 + 3 * 120 + 8 * 80);
+      // Epley ranks 120x3 (132) above 100x5 (116.7) and 80x8 (101.3).
+      expect(points[0].weight).toBe(120);
+      expect(points[0].reps).toBe(3);
+    });
+
+    it('marks a day a personal best only against what came before it', async () => {
+      withNames(['Bench']);
+      withData([
+        session(daysAgo(30), [
+          { name: 'Bench', sets: [{ reps: 5, weight: 80 }] },
+        ]),
+        session(daysAgo(20), [
+          { name: 'Bench', sets: [{ reps: 5, weight: 70 }] },
+        ]),
+        session(daysAgo(10), [
+          { name: 'Bench', sets: [{ reps: 5, weight: 90 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Bench');
+
+      expect(points.map((p) => p.isPersonalBest)).toEqual([true, false, true]);
+    });
+
+    it('treats differently-cased names as one exercise', async () => {
+      withNames(['Bench Press']);
+      withData([
+        session(daysAgo(9), [
+          { name: 'Bench Press', sets: [{ reps: 5, weight: 60 }] },
+        ]),
+        session(daysAgo(2), [
+          { name: 'bench press', sets: [{ reps: 5, weight: 65 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Bench Press');
+      expect(points).toHaveLength(2);
+    });
+
+    it('ignores other exercises in the same session', async () => {
+      withNames(['Squat', 'Curl']);
+      withData([
+        session(daysAgo(4), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 100 }] },
+          { name: 'Curl', sets: [{ reps: 12, weight: 15 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Squat');
+      expect(points).toHaveLength(1);
+      expect(points[0].sets).toBe(1);
+    });
+
+    it('skips sets with no load or no reps', async () => {
+      withNames(['Plank']);
+      withData([
+        session(daysAgo(4), [
+          { name: 'Plank', sets: [{ reps: 0, weight: 0 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Plank');
+      expect(points).toEqual([]);
+    });
+
+    // Opening on an empty chart when there is data to show would read as a bug.
+    it('defaults to the exercise logged on the most days', async () => {
+      withNames(['Squat', 'Curl']);
+      withData([
+        session(daysAgo(9), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 100 }] },
+          { name: 'Curl', sets: [{ reps: 10, weight: 15 }] },
+        ]),
+        session(daysAgo(2), [
+          { name: 'Squat', sets: [{ reps: 5, weight: 105 }] },
+        ]),
+      ]);
+
+      const history = await service.getExerciseHistory(USER);
+      expect(history.exercise).toBe('Squat');
+      expect(history.points).toHaveLength(2);
+    });
+
+    it('lists every logged exercise for the picker, sorted', async () => {
+      withNames(['Squat', 'Bench', 'Row']);
+      withData([]);
+
+      const { availableExercises } = await service.getExerciseHistory(USER);
+      expect(availableExercises).toEqual(['Bench', 'Row', 'Squat']);
+    });
+
+    // The window bounds the curve; narrowing it must not empty the picker that
+    // chose the exercise being looked at.
+    it('applies the window to the curve but not to the exercise list', async () => {
+      withNames(['Squat', 'Deadlift']);
+      withData([]);
+
+      await service.getExerciseHistory(USER, 'Squat', 90);
+
+      const curveFilter = findFilter(0) as { performedAt?: { $gte: Date } };
+      expect(curveFilter.performedAt?.$gte).toBeInstanceOf(Date);
+      expect(distinctFilter(0)).not.toHaveProperty('performedAt');
+    });
+
+    it('reads the whole log when no window is given', async () => {
+      withNames(['Squat']);
+      withData([]);
+
+      await service.getExerciseHistory(USER, 'Squat');
+
+      expect(findFilter(0)).not.toHaveProperty('performedAt');
+    });
+
+    it('has no curve for a user who has never trained', async () => {
+      withNames([]);
+      withData([]);
+
+      const history = await service.getExerciseHistory(USER);
+      expect(history.exercise).toBe('');
+      expect(history.points).toEqual([]);
     });
   });
 });

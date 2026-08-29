@@ -19,6 +19,7 @@ import { WorkoutStatsService } from './workout-stats.service';
 // passes `undefined` to the handler instead of the body.
 import {
   CreateWorkoutSessionDto,
+  ExerciseHistoryQueryDto,
   ListWorkoutSessionsDto,
   WorkoutStatsQueryDto,
 } from '../../interfaces/workout-session.interfaces';
@@ -74,6 +75,24 @@ export class WorkoutSessionController {
     @Query() query: WorkoutStatsQueryDto,
   ) {
     return this.workoutStatsService.getStats(userId, query.days ?? 30);
+  }
+
+  /**
+   * One exercise's strength curve. Same `@OwnsUserParam` as `/stats`, so a
+   * connected trainer can see whether their client's bench has moved.
+   */
+  @Get('user/:userId/exercise-history')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getExerciseHistory(
+    @Param('userId') userId: string,
+    @Query() query: ExerciseHistoryQueryDto,
+  ) {
+    return this.workoutStatsService.getExerciseHistory(
+      userId,
+      query.name,
+      query.days,
+    );
   }
 
   @Get(':id')
