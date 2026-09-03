@@ -164,3 +164,21 @@ export class ListWorkoutSessionsDto {
   @Max(200)
   limit?: number;
 }
+
+export class OverloadQueryDto {
+  /**
+   * Narrow to one exercise. Omitted returns every lift with enough history,
+   * which is what the dashboard card wants; the session screen passes a name.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  exercise?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  limit?: number;
+}
