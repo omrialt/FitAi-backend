@@ -139,11 +139,13 @@ describe('BodyPhotoService', () => {
      * by accident on the way in.
      */
     it('always stores a new photo as private', async () => {
-      const created = await service.create(CLIENT, file, {
-        pose: 'front',
-        // Even if a caller smuggles one in, it is not read.
-        ...({ visibility: 'trainer' } as never),
-      });
+      // A caller smuggling a visibility in: the service takes a typed details
+      // object with no such field, and `create` hard-codes 'private' anyway.
+      const smuggled = { pose: 'front', visibility: 'trainer' } as unknown as {
+        pose: 'front';
+      };
+
+      const created = await service.create(CLIENT, file, smuggled);
 
       expect(photoModel.create.mock.calls[0][0].visibility).toBe('private');
       expect(created.visibility).toBe('private');

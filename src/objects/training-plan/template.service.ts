@@ -133,13 +133,7 @@ export class TemplateService {
             : entry.nameEn
           : templateExercise.slug;
 
-        const oneRepMax =
-          oneRepMaxByName.get(name.trim().toLowerCase()) ??
-          (entry
-            ? oneRepMaxByName.get(entry.nameEn.trim().toLowerCase()) ??
-              oneRepMaxByName.get(entry.nameHe.trim().toLowerCase())
-            : undefined) ??
-          null;
+        const oneRepMax = this.findOneRepMax(oneRepMaxByName, name, entry);
 
         return {
           name,
@@ -171,6 +165,44 @@ export class TemplateService {
       focus: template.goal,
       startDate: new Date(),
     };
+  }
+
+  /**
+   * The user's estimated 1RM for a catalogue exercise, whatever they call it.
+   *
+   * The log stores free text, so a lookup by canonical name alone is not
+   * enough: someone who has been logging "Bench Press" for months has no
+   * personal best under "Barbell Bench Press", which is what the catalogue
+   * calls it. Matching only the canonical names produced a 5/3/1 plan with
+   * real percentages on the squat and press and zeros on the bench and
+   * deadlift — from the same log, for no reason the user could see.
+   *
+   * `aliases` is the field that fixes it, and this is what it was put in the
+   * catalogue for: "the spellings people actually type", so the catalogue
+   * never has to rename an exercise to be findable. Checked last, after both
+   * canonical names, so an exact match always wins over a nickname.
+   */
+  private findOneRepMax(
+    byName: Map<string, number>,
+    planName: string,
+    entry: { nameEn: string; nameHe: string; aliases?: string[] } | undefined,
+  ): number | null {
+    const lookup = (value: string | undefined) =>
+      value ? byName.get(value.trim().toLowerCase()) : undefined;
+
+    const candidates = [
+      planName,
+      entry?.nameEn,
+      entry?.nameHe,
+      ...(entry?.aliases ?? []),
+    ];
+
+    for (const candidate of candidates) {
+      const found = lookup(candidate);
+      if (found !== undefined) return found;
+    }
+
+    return null;
   }
 
   /**

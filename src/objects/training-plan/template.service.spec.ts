@@ -197,6 +197,42 @@ describe('TemplateService', () => {
     });
 
     /**
+     * Found by creating a real plan against a real log. The log said "Bench
+     * Press"; the catalogue calls it "Barbell Bench Press". Matching only the
+     * canonical names produced a 5/3/1 plan with real percentages on the squat
+     * and press and zeros on the bench and deadlift, from the same history,
+     * for no reason the user could see.
+     *
+     * `aliases` is what the catalogue put that field there for.
+     */
+    it('finds the personal best under a name the user actually types', async () => {
+      stats.getStats.mockResolvedValue({
+        ...emptyStats,
+        personalBests: [
+          {
+            // An alias of `barbell-bench-press`, not its nameEn.
+            exercise: 'Bench Press',
+            weight: 90,
+            reps: 3,
+            estimatedOneRepMax: 100,
+            achievedAt: new Date(),
+          },
+        ],
+      });
+
+      const plan = await service.build({
+        templateId: 'wendler-531',
+        userId: USER,
+      });
+
+      const bench = plan.days
+        ?.flatMap((day) => day.exercises)
+        .find((e) => e.name === 'לחיצת חזה במוט');
+
+      expect(bench?.sets.map((s) => s.targetWeight)).toEqual([65, 75, 85]);
+    });
+
+    /**
      * Guessing a starting weight for someone who has never performed the lift
      * is how a plan gets a person injured. Zero renders as an empty field with
      * a plate calculator next to it, which is the honest answer.
