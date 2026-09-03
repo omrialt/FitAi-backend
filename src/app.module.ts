@@ -21,6 +21,7 @@ import { ProgressStatsModule } from './objects/progress-stats/progress-stats.mod
 import { WorkoutSessionModule } from './objects/workout-session/workout-session.module';
 import { ExerciseModule } from './objects/exercise/exercise.module';
 import { AiReviewModule } from './objects/ai-review/ai-review.module';
+import { AnthropicModule } from './common/anthropic/anthropic.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
@@ -45,6 +46,10 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     }),
     CloudinaryModule,
     NodemailerModule,
+    // Global — one client, so the four AI features share one set of
+    // `lastCallAt` / `lastError` counters and the status route can answer
+    // "has this ever worked" rather than only "is a key present".
+    AnthropicModule,
     // Global — the exception filter is built by the root injector and resolves
     // AlertService from here.
     ObservabilityModule,

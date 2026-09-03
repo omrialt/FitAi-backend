@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NodemailerService } from '../nodemailer/nodemailer.service';
+import { createUpstashKv, UpstashKv } from '../upstash/upstash-kv';
 
 /** How long the same alert stays suppressed after being sent. */
 const DEFAULT_COOLDOWN_MS = 15 * 60 * 1000;
@@ -22,19 +23,40 @@ export interface AlertInput {
  * a DSN and a paid tier does not exist until someone signs up. This works with
  * the credentials already in the environment.
  *
- * What it does NOT claim to be: aggregation, search, or accurate counting.
- * Deduplication is per-process, and on Vercel each warm lambda has its own
- * memory, so a burst spread over instances can send one mail per instance.
- * That is deliberately the safe direction — this errs toward extra mail rather
- * than toward silence, which is the failure being fixed. Exact counting needs
- * shared state, the same dependency N-04 needs for rate limiting.
+ * Deduplication is shared when it can be. With Upstash configured, the
+ * cooldown is a single `SET NX EX` that every instance races for and exactly
+ * one wins — the same dependency, and the same reasoning, as the rate-limit
+ * store. Without it the cooldown falls back to a per-process `Map`, which on
+ * Vercel means one mail per warm lambda.
+ *
+ * The fallback direction is deliberate and stays deliberate: when the shared
+ * counter is absent *or unreachable*, this errs toward extra mail rather than
+ * toward silence. The failure being fixed was a deploy that locked three
+ * accounts out with nothing to announce it; a duplicate alert is noise, a
+ * missing one is that outage again.
+ *
+ * What it still does NOT claim to be: aggregation, search, or counting.
  */
 @Injectable()
 export class AlertService {
   private readonly logger = new Logger(AlertService.name);
+  /** Used when Upstash is absent, and when it is present but not answering. */
   private readonly recentlySent = new Map<string, number>();
+  private readonly shared: UpstashKv | null;
 
-  constructor(private readonly mailer: NodemailerService) {}
+  constructor(private readonly mailer: NodemailerService) {
+    this.shared = createUpstashKv();
+    this.logger.log(
+      this.shared
+        ? 'Alert de-duplication is shared across instances.'
+        : 'Alert de-duplication is per-instance — set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to share it.',
+    );
+  }
+
+  /** True when the cooldown is a counter every instance sees. */
+  get deduplicationIsShared(): boolean {
+    return this.shared !== null;
+  }
 
   /** Where alerts go. Unset means alerting is off. */
   private get recipient(): string | undefined {
@@ -63,9 +85,8 @@ export class AlertService {
 
       const to = this.recipient;
       if (!to) return;
-      if (this.isSuppressed(input.fingerprint)) return;
+      if (await this.isSuppressed(input.fingerprint)) return;
 
-      this.recentlySent.set(input.fingerprint, Date.now());
       await this.mailer.sendOperationalAlert(to, input.subject, input.detail);
     } catch (error) {
       this.logger.error(
@@ -75,13 +96,40 @@ export class AlertService {
     }
   }
 
-  private isSuppressed(fingerprint: string): boolean {
+  /**
+   * Whether this alert has already been sent inside its cooldown.
+   *
+   * Claiming the window and reporting suppression are the same operation on
+   * purpose. Checking first and marking afterwards is exactly the race that
+   * lets two instances both decide they are the sender, and the shared store
+   * only removes that race if nobody reintroduces it here.
+   */
+  private async isSuppressed(fingerprint: string): Promise<boolean> {
+    if (this.shared) {
+      try {
+        const won = await this.shared.claim(
+          `alert:${fingerprint}`,
+          this.cooldownMs / 1000,
+        );
+        return !won;
+      } catch (error) {
+        // Redis being unreachable must not silence an alert — that would make
+        // the observability feature fail in the one direction it exists to
+        // prevent. Fall through to the local map and accept the duplicates.
+        this.logger.warn(
+          `Shared alert de-duplication unavailable, falling back to per-instance: ${(error as Error).message}`,
+        );
+      }
+    }
+
     const now = Date.now();
     const last = this.recentlySent.get(fingerprint);
 
     if (last !== undefined && now - last < this.cooldownMs) {
       return true;
     }
+
+    this.recentlySent.set(fingerprint, now);
 
     // Opportunistic cleanup so a long-lived instance does not accumulate an
     // entry per distinct fingerprint forever.
