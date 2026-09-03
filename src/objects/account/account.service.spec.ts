@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 
 import { AccountService, OWNED_BY_USER_ID } from './account.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { BodyPhotoService } from '../body-photo/body-photo.service';
 
 /**
  * Export and erasure.
@@ -32,6 +33,7 @@ describe('AccountService', () => {
   let service: AccountService;
   let models: Record<string, Record<string, jest.Mock>>;
   let cloudinary: { deleteImage: jest.Mock };
+  let bodyPhotos: { list: jest.Mock; removeAllForUser: jest.Mock };
 
   const chain = (result: unknown) => {
     const link: Record<string, unknown> = {
@@ -56,6 +58,10 @@ describe('AccountService', () => {
       models[name] = makeModel();
     }
     cloudinary = { deleteImage: jest.fn().mockResolvedValue(undefined) };
+    bodyPhotos = {
+      list: jest.fn().mockResolvedValue([]),
+      removeAllForUser: jest.fn().mockResolvedValue(3),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -65,6 +71,7 @@ describe('AccountService', () => {
           useValue: value,
         })),
         { provide: CloudinaryService, useValue: cloudinary },
+        { provide: BodyPhotoService, useValue: bodyPhotos },
       ],
     }).compile();
 

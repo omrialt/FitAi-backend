@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+
+import { BodyPhotoService } from '../body-photo/body-photo.service';
 import * as bcrypt from 'bcrypt';
 
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
@@ -85,6 +87,10 @@ export class AccountService {
     @InjectModel('RefreshTokenFamily')
     private readonly refreshTokenFamilyModel: Model<AnyDoc>,
     @InjectModel('AuthCode') private readonly authCodeModel: Model<AnyDoc>,
+    // Body photos are not in OWNED_BY_USER_ID because deleting the rows is
+    // only half the job — the images live in Cloudinary, and a row deleted
+    // without its asset is an erasure that did not happen.
+    private readonly bodyPhotos: BodyPhotoService,
     private readonly cloudinary: CloudinaryService,
   ) {}
 
@@ -135,6 +141,7 @@ export class AccountService {
       workoutSessions,
       aiRecommendations,
       trainerConnections,
+      bodyPhotos,
     ] = await Promise.all([
       this.trainingPlanModel.find({ userId: objectId }).lean().exec(),
       this.nutritionPlanModel.find({ userId: objectId }).lean().exec(),
@@ -147,6 +154,12 @@ export class AccountService {
         .find({ $or: [{ trainerId: objectId }, { clientId: objectId }] })
         .lean()
         .exec(),
+      // Metadata and a signed URL per photo. The images themselves are not
+      // inlined — an export is already the least controlled copy of someone's
+      // data that will ever exist, and base64 photographs of a body would make
+      // that considerably more true. The URLs let the user fetch what they
+      // want while the account still exists, which is the point of an export.
+      this.bodyPhotos.list(userId, userId),
     ]);
 
     return {
@@ -162,6 +175,7 @@ export class AccountService {
       workoutSessions,
       aiRecommendations,
       trainerConnections,
+      bodyPhotos,
     };
   }
 
@@ -198,6 +212,12 @@ export class AccountService {
         .exec();
       removed[name] = result.deletedCount ?? 0;
     }
+
+    // Photos first, and separately: each row owns a Cloudinary asset, so a
+    // plain deleteMany would leave the images behind — fetchable by anyone
+    // still holding a signed URL, and "deleted" would be false in the only
+    // sense that matters for this kind of photograph.
+    removed.BodyPhoto = await this.bodyPhotos.removeAllForUser(userId);
 
     // Connections name the user under one of two fields depending on which
     // side of the relationship they were on.

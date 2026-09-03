@@ -24,6 +24,7 @@ import { AiReviewModule } from './objects/ai-review/ai-review.module';
 import { AnthropicModule } from './common/anthropic/anthropic.module';
 import { FoodModule } from './objects/food/food.module';
 import { AiCoachModule } from './objects/ai-coach/ai-coach.module';
+import { BodyPhotoModule } from './objects/body-photo/body-photo.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
@@ -65,6 +66,10 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     NutritionPlanModule,
     AiRecommendationModule,
     PhysicalDataModule,
+    // Photos are private on upload and shared one at a time. Deliberately not
+    // covered by UserOwnershipGuard: a trainer's access to the measurements
+    // grants nothing here.
+    BodyPhotoModule,
     ProgressStatsModule,
     WorkoutSessionModule,
     // Shared reference content: read-only for every signed-in user, seeded by
