@@ -14,6 +14,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { WorkoutSessionService } from './workout-session.service';
 import { WorkoutStatsService } from './workout-stats.service';
+import { ProgressionService } from './progression.service';
 // Value imports on purpose: `import type` erases the class, the emitted
 // parameter metadata becomes `Function`, and the global ValidationPipe then
 // passes `undefined` to the handler instead of the body.
@@ -21,6 +22,7 @@ import {
   CreateWorkoutSessionDto,
   ExerciseHistoryQueryDto,
   ListWorkoutSessionsDto,
+  OverloadQueryDto,
   WorkoutStatsQueryDto,
 } from '../../interfaces/workout-session.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
@@ -35,6 +37,7 @@ export class WorkoutSessionController {
   constructor(
     private readonly workoutSessionService: WorkoutSessionService,
     private readonly workoutStatsService: WorkoutStatsService,
+    private readonly progressionService: ProgressionService,
   ) {}
 
   /**
@@ -105,6 +108,41 @@ export class WorkoutSessionController {
   @OwnsUserParam()
   getFatigue(@Param('userId') userId: string) {
     return this.workoutStatsService.getFatigueSignal(userId);
+  }
+
+  /**
+   * What to do next session, per exercise. Same `@OwnsUserParam` as the other
+   * user-scoped reads, so a connected trainer sees their client's next step.
+   *
+   * No AI: double progression over the real log. The disabled button on the
+   * trainings page has been promising this since the first revision of the
+   * gap analysis, filed under the AI tier the whole time.
+   */
+  @Get('user/:userId/overload')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getOverload(
+    @Param('userId') userId: string,
+    @Query() query: OverloadQueryDto,
+  ) {
+    return this.progressionService.getOverloadPlan(
+      userId,
+      query.exercise,
+      query.limit,
+    );
+  }
+
+  /**
+   * What backing off would look like in kilos and sets.
+   *
+   * Always 200, never 404: "you do not need a deload" is the answer most of
+   * the time and is not a missing resource. The client reads `recommended`.
+   */
+  @Get('user/:userId/deload')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getDeload(@Param('userId') userId: string) {
+    return this.progressionService.getDeloadPrescription(userId);
   }
 
   @Get(':id')

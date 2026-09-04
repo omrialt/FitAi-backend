@@ -1,11 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 
 import { WorkoutStatsService } from '../workout-session/workout-stats.service';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
+import {
+  AnthropicService,
+  DEFAULT_MODEL,
+} from '../../common/anthropic/anthropic.service';
 
 /**
  * The weekly training review — the first thing in FitAi that is actually AI.
@@ -31,17 +34,6 @@ import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
  *     before any request is made, rather than asked for a review the data
  *     cannot support.
  */
-
-const MODEL = 'claude-opus-5';
-
-/** Model output is data, not code — a malformed answer must not throw. */
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Structured rather than prose, so the app can render it, translate the
@@ -110,7 +102,6 @@ interface ReviewContext {
 @Injectable()
 export class AiReviewService {
   private readonly logger = new Logger(AiReviewService.name);
-  private readonly client: Anthropic | null;
 
   constructor(
     @InjectModel('AiRecommendation')
@@ -119,19 +110,11 @@ export class AiReviewService {
     private readonly sessionModel: Model<unknown>,
     private readonly workoutStats: WorkoutStatsService,
     private readonly mailer: NodemailerService,
-  ) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    this.client = apiKey ? new Anthropic({ apiKey }) : null;
-
-    if (!this.client) {
-      this.logger.log(
-        'ANTHROPIC_API_KEY is not set — weekly AI review is disabled.',
-      );
-    }
-  }
+    private readonly anthropic: AnthropicService,
+  ) {}
 
   get enabled(): boolean {
-    return this.client !== null;
+    return this.anthropic.enabled;
   }
 
   /**
@@ -186,22 +169,24 @@ export class AiReviewService {
    *
    * Adaptive thinking with `high` effort: this is four weeks of training data
    * being turned into advice a person will act on, which is worth reasoning
-   * about, and it runs weekly rather than per request.
+   * about, and it runs weekly rather than per request. It is the only AI call
+   * in the app that pays for thinking — the other three are a parse, a
+   * template fill and a chat turn, where it would buy nothing.
+   *
+   * Refusals, truncation, unparseable answers and an unreachable API are all
+   * handled by `AnthropicService` and arrive here as `null`.
    */
   async generate(context: ReviewContext): Promise<{
     review: WeeklyReview;
     tokensUsed: number;
   } | null> {
-    if (!this.client) return null;
-
-    const response = await this.client.messages.create({
-      model: MODEL,
-      max_tokens: 16000,
-      thinking: { type: 'adaptive' },
-      output_config: {
-        effort: 'high',
-        format: { type: 'json_schema', schema: REVIEW_JSON_SCHEMA },
-      },
+    const result = await this.anthropic.complete({
+      label: 'weekly-review',
+      jsonSchema: REVIEW_JSON_SCHEMA,
+      parser: reviewSchema,
+      maxTokens: 16000,
+      effort: 'high',
+      thinking: true,
       system: [
         'You are a strength coach writing a short weekly review for one trainee.',
         'You are given derived statistics only — no identity, no free text from the user.',
@@ -213,36 +198,12 @@ export class AiReviewService {
         '- Do not give medical advice, diagnose injury, or discuss weight loss targets.',
         '- Write in Hebrew. Keep exercise names as they appear in the data.',
       ].join('\n'),
-      messages: [
-        {
-          role: 'user',
-          content: `Here are the trainee's last ${context.windowDays} days:\n\n${JSON.stringify(context, null, 2)}`,
-        },
-      ],
+      prompt: `Here are the trainee's last ${context.windowDays} days:\n\n${JSON.stringify(context, null, 2)}`,
     });
 
-    // A refusal is a 200 with no usable content, so `stop_reason` is checked
-    // before `content` is read at all.
-    if (response.stop_reason === 'refusal') {
-      this.logger.warn('Weekly review was declined by the model; skipping.');
-      return null;
-    }
+    if (!result) return null;
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
-
-    const parsed = reviewSchema.safeParse(safeJson(text));
-    if (!parsed.success) {
-      this.logger.warn('Weekly review came back unparseable; skipping.');
-      return null;
-    }
-
-    return {
-      review: parsed.data,
-      tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-    };
+    return { review: result.data, tokensUsed: result.tokensUsed };
   }
 
   /**
@@ -253,7 +214,7 @@ export class AiReviewService {
    * without treating them as failures.
    */
   async reviewUser(userId: string, email?: string): Promise<boolean> {
-    if (!this.client) return false;
+    if (!this.enabled) return false;
 
     const context = await this.buildContext(userId);
     if (!context) return false;
@@ -268,7 +229,7 @@ export class AiReviewService {
       category: 'training',
       content: this.render(review),
       generatedBy: 'ai',
-      aiModelUsed: MODEL,
+      aiModelUsed: DEFAULT_MODEL,
       metadata: {
         tokensUsed,
         version: 'weekly-review-1',

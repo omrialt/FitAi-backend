@@ -16,6 +16,7 @@ import { AuthCodeSchema } from '../auth/auth-code.schema';
 import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
 import { AccountService } from './account.service';
 import { AccountController } from './account.controller';
+import { BodyPhotoModule } from '../body-photo/body-photo.module';
 
 /**
  * Registers every collection that stores something about a user.
@@ -27,6 +28,8 @@ import { AccountController } from './account.controller';
  */
 @Module({
   imports: [
+    // For the photo cascade: rows and Cloudinary assets go together.
+    BodyPhotoModule,
     MongooseModule.forFeature([
       { name: 'User', schema: UserSchema },
       { name: 'TrainingPlan', schema: TrainingPlanSchema },

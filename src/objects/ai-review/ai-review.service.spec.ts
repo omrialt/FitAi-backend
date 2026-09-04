@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { AiReviewService } from './ai-review.service';
 import { WorkoutStatsService } from '../workout-session/workout-stats.service';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
+import { AnthropicService } from '../../common/anthropic/anthropic.service';
 
 const USER = new Types.ObjectId().toHexString();
 
@@ -64,6 +65,10 @@ describe('AiReviewService', () => {
         { provide: getModelToken('WorkoutSession'), useValue: sessionModel },
         { provide: WorkoutStatsService, useValue: stats },
         { provide: NodemailerService, useValue: mailer },
+        // A real one, built here rather than mocked: whether the review is
+        // enabled is now the shared client's answer, and stubbing it would
+        // stop these tests proving the key gate at all.
+        { provide: AnthropicService, useFactory: () => new AnthropicService() },
       ],
     }).compile();
 

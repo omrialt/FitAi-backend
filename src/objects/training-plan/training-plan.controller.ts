@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TrainingPlanService } from './training-plan.service';
+import { TemplateService } from './template.service';
+import { TEMPLATE_IDS } from './periodization-templates';
 import { TrainingPlan, trainingPlanSchema } from './training-plan.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { UserOwnershipGuard } from '../../common/guards/ownership.guard';
@@ -39,11 +41,22 @@ const trainingPlanUpdateBodySchema = trainingPlanCreateBodySchema.omit({
 const shareBodySchema = z.object({
   userIds: z.array(z.string()).min(1),
 });
+const fromTemplateBodySchema = z.object({
+  templateId: z.enum(TEMPLATE_IDS as [string, ...string[]]),
+  /** Which weekdays to place the cycle on, 0 = Sunday. */
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  title: z.string().min(1).max(120).optional(),
+  language: z.enum(['he', 'en']).optional(),
+});
 
 @Controller('training-plans')
 @UseGuards(AuthGuard('jwt'), RolesGuard, UserOwnershipGuard)
 export class TrainingPlanController {
-  constructor(private readonly trainingPlanService: TrainingPlanService) {}
+  constructor(
+    private readonly trainingPlanService: TrainingPlanService,
+    private readonly templateService: TemplateService,
+  ) {}
+
   @Post()
   @Roles('trainer', 'admin', 'user')
   async create(
@@ -53,6 +66,51 @@ export class TrainingPlanController {
   ) {
     data.userId = req.user.id;
     return this.trainingPlanService.create(data);
+  }
+
+  /**
+   * The shipped programmes, without their days — a picker needs names and
+   * shape, not thirty exercises it will not render.
+   *
+   * Declared before `@Get(':id')`; Express matches in registration order, so
+   * otherwise this binds `id: 'templates'` and 404s. Same trap the exercise
+   * controller documents.
+   */
+  @Get('templates')
+  @Roles('user', 'trainer', 'admin')
+  listTemplates() {
+    return this.templateService.list();
+  }
+
+  /**
+   * Creates a real plan from a template, owned by the caller.
+   *
+   * Goes through the ordinary `create` path rather than writing the document
+   * directly, so a templated plan gets the same validation, calendar sync and
+   * sharing behaviour as one built by hand. It is a plan, not a subscription:
+   * nothing links it back to the template afterwards.
+   */
+  @Post('from-template')
+  @Roles('user', 'trainer', 'admin')
+  async createFromTemplate(
+    @Body(new ZodValidationPipe(fromTemplateBodySchema))
+    body: {
+      templateId: string;
+      weekdays?: number[];
+      title?: string;
+      language?: string;
+    },
+    @Request() req: AuthRequest,
+  ) {
+    const plan = await this.templateService.build({
+      templateId: body.templateId,
+      userId: req.user.id,
+      weekdays: body.weekdays,
+      title: body.title,
+      language: body.language,
+    });
+
+    return this.trainingPlanService.create(plan);
   }
 
   @Get()

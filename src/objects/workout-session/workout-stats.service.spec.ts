@@ -126,13 +126,66 @@ describe('WorkoutStatsService', () => {
       expect(streak.longestWeeks).toBe(2);
     });
 
-    // Without the grace period the number would collapse to zero every Monday
+    // Without the grace period the number would collapse to zero every Sunday
     // until the first session of the week.
     it('keeps the streak alive when the last workout was last week', async () => {
       withData([session(daysAgo(14)), session(daysAgo(8))]);
 
       const { streak } = await service.getStats(USER);
       expect(streak.currentWeeks).toBeGreaterThanOrEqual(1);
+    });
+
+    /**
+     * N-21. Weeks used to be counted as `floor(t / 7 days)` — whole weeks
+     * since the Unix epoch — and 1 January 1970 was a Thursday, so every
+     * user's training week rolled over on Thursday morning rather than on
+     * Sunday. The visible symptom: a streak that read zero for someone who
+     * had trained a few days earlier, on some days of the week and not others.
+     *
+     * The test above exercised almost exactly that shape and still passed for
+     * five days out of seven, because it reads the real clock. That is the
+     * whole reason the bug survived six revisions of this report and a green
+     * suite: it only reproduces if you happen to run the tests on a Thursday
+     * or a Friday. It was found on a Thursday.
+     *
+     * So this pins the clock to each weekday in turn and places the sessions
+     * by calendar week rather than by a day offset — "eight days ago" is
+     * itself weekday-dependent, and using it here would only move the
+     * ambiguity into the test. The assertion is not "Thursday works" but that
+     * the answer does not depend on which day the question is asked, which is
+     * the property that was actually broken.
+     */
+    describe('the week boundary does not move with the day it is checked', () => {
+      const SUNDAY = new Date(2026, 8, 6, 9, 0, 0); // 6 Sep 2026, local
+
+      /** Midweek of the calendar week `n` weeks before the pinned today. */
+      const midOfWeeksAgo = (n: number): Date => {
+        const now = new Date();
+        const d = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() - now.getDay() - 7 * n + 3,
+        );
+        d.setHours(12, 0, 0, 0);
+        return d;
+      };
+
+      afterEach(() => jest.useRealTimers());
+
+      for (let offset = 0; offset < 7; offset++) {
+        const today = new Date(SUNDAY.getTime() + offset * DAY_MS);
+        const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
+
+        it(`counts two trained weeks when checked on a ${weekday}`, async () => {
+          jest.useFakeTimers().setSystemTime(today);
+
+          withData([session(midOfWeeksAgo(2)), session(midOfWeeksAgo(1))]);
+
+          const { streak } = await service.getStats(USER);
+          // Last week and the week before: two, on every day of the week.
+          expect(streak.currentWeeks).toBe(2);
+        });
+      }
     });
   });
 

@@ -624,9 +624,38 @@ export class WorkoutStatsService {
     return new Date(date).toISOString().slice(0, 10);
   }
 
-  /** Whole weeks since the epoch — adjacent weeks differ by exactly one. */
+  /**
+   * Which calendar week a date falls in. Adjacent weeks differ by exactly one.
+   *
+   * Weeks start on Sunday, in the viewer's own timezone. This used to be
+   * `floor(t / 7 days)`, whole weeks since the Unix epoch, which is simpler
+   * and wrong in a way nothing on screen revealed: **1 January 1970 was a
+   * Thursday**, so every user's training week silently rolled over on Thursday
+   * morning. Someone who trained on Wednesday and opened the app on Thursday
+   * saw their streak read zero, because the grace period — "this week or last
+   * week" — measured those weeks from Thursday. The number was wrong two days
+   * out of every seven and right the rest of the time, which is how it
+   * survived six revisions of the gap analysis and a passing test suite: the
+   * test that catches it only fails when it is *run* on a Wednesday or a
+   * Thursday. It was found on 2026-09-03, a Thursday.
+   *
+   * Sunday because the rest of the app already counts that way — `dayOfWeek`
+   * on a training plan is 0-6 with 0 = Sunday, and the product is Hebrew-first,
+   * where the working week starts on Sunday.
+   *
+   * Built from local midnight rather than UTC so the boundary is the one the
+   * user actually experiences. `Math.round` rather than `floor` absorbs the
+   * one-hour DST shift between two consecutive local Sundays, which would
+   * otherwise drop two different weeks into one bucket twice a year.
+   */
   private weekIndex(date: Date | string): number {
-    return Math.floor(new Date(date).getTime() / (7 * DAY_MS));
+    const at = new Date(date);
+    const startOfWeek = new Date(
+      at.getFullYear(),
+      at.getMonth(),
+      at.getDate() - at.getDay(),
+    );
+    return Math.round(startOfWeek.getTime() / (7 * DAY_MS));
   }
 
   private emptyStreak(): StreakSummary {
