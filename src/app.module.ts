@@ -25,6 +25,7 @@ import { AnthropicModule } from './common/anthropic/anthropic.module';
 import { FoodModule } from './objects/food/food.module';
 import { AiCoachModule } from './objects/ai-coach/ai-coach.module';
 import { BodyPhotoModule } from './objects/body-photo/body-photo.module';
+import { MealLogModule } from './objects/meal-log/meal-log.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
@@ -64,6 +65,10 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     AuthModule,
     TrainingPlanModule,
     NutritionPlanModule,
+    // The other half of the nutrition story: plans say what to eat, this
+    // records what was eaten, and only both together make "remaining today"
+    // a number rather than a guess.
+    MealLogModule,
     AiRecommendationModule,
     PhysicalDataModule,
     // Photos are private on upload and shared one at a time. Deliberately not
