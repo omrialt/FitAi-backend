@@ -17,6 +17,7 @@ import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
 import { AccountService } from './account.service';
 import { AccountController } from './account.controller';
 import { BodyPhotoModule } from '../body-photo/body-photo.module';
+import { MealLogSchema } from '../meal-log/meal-log.schema';
 
 /**
  * Registers every collection that stores something about a user.
@@ -34,6 +35,7 @@ import { BodyPhotoModule } from '../body-photo/body-photo.module';
       { name: 'User', schema: UserSchema },
       { name: 'TrainingPlan', schema: TrainingPlanSchema },
       { name: 'NutritionPlan', schema: NutritionPlanSchema },
+      { name: 'MealLog', schema: MealLogSchema },
       { name: 'PhysicalData', schema: PhysicalDataSchema },
       { name: 'ProgressStats', schema: ProgressStatsSchema },
       { name: 'CurrentStatus', schema: CurrentStatusSchema },

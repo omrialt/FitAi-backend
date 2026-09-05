@@ -28,6 +28,9 @@ type AnyDoc = Record<string, unknown>;
 export const OWNED_BY_USER_ID = [
   'TrainingPlan',
   'NutritionPlan',
+  // Plain rows with no external asset, unlike BodyPhoto — so this one belongs
+  // in the ordinary cascade rather than needing its own deletion pass.
+  'MealLog',
   'PhysicalData',
   'ProgressStats',
   'CurrentStatus',
@@ -70,6 +73,7 @@ export class AccountService {
     private readonly trainingPlanModel: Model<AnyDoc>,
     @InjectModel('NutritionPlan')
     private readonly nutritionPlanModel: Model<AnyDoc>,
+    @InjectModel('MealLog') private readonly mealLogModel: Model<AnyDoc>,
     @InjectModel('PhysicalData')
     private readonly physicalDataModel: Model<AnyDoc>,
     @InjectModel('ProgressStats')
@@ -98,6 +102,7 @@ export class AccountService {
     const models: Record<OwnedModelName, Model<AnyDoc>> = {
       TrainingPlan: this.trainingPlanModel,
       NutritionPlan: this.nutritionPlanModel,
+      MealLog: this.mealLogModel,
       PhysicalData: this.physicalDataModel,
       ProgressStats: this.progressStatsModel,
       CurrentStatus: this.currentStatusModel,
@@ -142,6 +147,7 @@ export class AccountService {
       aiRecommendations,
       trainerConnections,
       bodyPhotos,
+      mealLogs,
     ] = await Promise.all([
       this.trainingPlanModel.find({ userId: objectId }).lean().exec(),
       this.nutritionPlanModel.find({ userId: objectId }).lean().exec(),
@@ -160,6 +166,9 @@ export class AccountService {
       // that considerably more true. The URLs let the user fetch what they
       // want while the account still exists, which is the point of an export.
       this.bodyPhotos.list(userId, userId),
+      // A food diary is health data the same way the training log is, so it
+      // belongs in the export for the same reason.
+      this.mealLogModel.find({ userId: objectId }).lean().exec(),
     ]);
 
     return {
@@ -176,6 +185,7 @@ export class AccountService {
       aiRecommendations,
       trainerConnections,
       bodyPhotos,
+      mealLogs,
     };
   }
 
