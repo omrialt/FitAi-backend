@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
+import { setVolume, topReps, topWeight } from './set-math';
 
 /**
  * Derived training statistics: personal bests, streaks and adherence.
@@ -96,7 +97,12 @@ interface SessionRow {
   performedAt: Date;
   exercises?: {
     name: string;
-    sets?: { reps: number; weight: number; rpe?: number }[];
+    sets?: {
+      reps: number;
+      weight: number;
+      rpe?: number;
+      drops?: { reps: number; weight: number }[];
+    }[];
   }[];
 }
 
@@ -266,7 +272,9 @@ export class WorkoutStatsService {
     for (const session of sessions) {
       for (const exercise of session.exercises ?? []) {
         for (const set of exercise.sets ?? []) {
-          total += (set.weight || 0) * (set.reps || 0);
+          // Drops included: they are work performed, and a drop set that
+          // did not count would read as a volume drop the week it was added.
+          total += setVolume(set);
         }
       }
     }
@@ -421,7 +429,9 @@ export class WorkoutStatsService {
         for (const set of exercise.sets ?? []) {
           if (!set.weight || !set.reps) continue;
 
-          const e1rm = this.epley(set.weight, set.reps);
+          // e1RM from the top portion only — see set-math: a drop is done
+          // pre-fatigued and is not evidence of strength at its weight.
+          const e1rm = this.epley(topWeight(set), topReps(set));
           const held = byDay.get(day);
 
           if (!held) {
@@ -430,14 +440,14 @@ export class WorkoutStatsService {
               weight: set.weight,
               reps: set.reps,
               estimatedOneRepMax: e1rm,
-              volume: set.weight * set.reps,
+              volume: setVolume(set),
               sets: 1,
               isPersonalBest: false,
             });
             continue;
           }
 
-          held.volume += set.weight * set.reps;
+          held.volume += setVolume(set);
           held.sets += 1;
           if (e1rm > held.estimatedOneRepMax) {
             held.weight = set.weight;
@@ -593,7 +603,10 @@ export class WorkoutStatsService {
           // A set with no load or no reps carries no strength information.
           if (!set.weight || !set.reps) continue;
 
-          const e1rm = this.epley(set.weight, set.reps);
+          // Top portion only. A drop set's reductions are excluded on purpose:
+          // they happen after failure, so ranking them would record a personal
+          // best at a weight the user never lifted fresh.
+          const e1rm = this.epley(topWeight(set), topReps(set));
           const held = best.get(exercise.name);
           if (held && held.estimatedOneRepMax >= e1rm) continue;
 

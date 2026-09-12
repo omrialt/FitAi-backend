@@ -26,6 +26,22 @@ import {
  * the service receives `{}`.
  */
 
+/**
+ * One reduction inside a drop set. No `rpe` — the effort rating belongs to the
+ * sequence as a whole, which is taken to failure by definition.
+ */
+export class PerformedDropDto {
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  reps!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(2000)
+  weight!: number;
+}
+
 export class PerformedSetDto {
   @IsInt()
   @Min(0)
@@ -42,6 +58,19 @@ export class PerformedSetDto {
   @Min(1)
   @Max(10)
   rpe?: number;
+
+  /**
+   * Reductions taken without rest after the set above.
+   *
+   * Capped at six: past that it is not a drop set, it is a data-entry accident,
+   * and every one of these lands in a nested array the server has to validate.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @ValidateNested({ each: true })
+  @Type(() => PerformedDropDto)
+  drops?: PerformedDropDto[];
 }
 
 export class SessionExerciseDto {

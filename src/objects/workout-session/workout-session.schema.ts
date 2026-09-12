@@ -24,6 +24,19 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
 
 export const sessionSourceSchema = z.enum(['app', 'migration', 'import']);
 
+/**
+ * One reduction inside a drop set: the bar comes down, the set continues.
+ *
+ * No `rpe` field, deliberately. A drop set carries one effort rating for the
+ * whole sequence — it is performed to failure by definition, and asking for a
+ * number per reduction would be asking the user to rate something they were
+ * not measuring.
+ */
+export const performedDropSchema = z.object({
+  reps: z.number().int().nonnegative(),
+  weight: z.number().nonnegative(),
+});
+
 export const performedSetSchema = z.object({
   reps: z
     .number({ invalid_type_error: 'Reps must be a number' })
@@ -34,6 +47,25 @@ export const performedSetSchema = z.object({
     .nonnegative(),
   /** Rate of perceived exertion, 1–10. Optional: not every logger uses it. */
   rpe: z.number().min(1).max(10).optional(),
+  /**
+   * Reductions performed immediately after the set above, without rest.
+   *
+   * `reps` and `weight` on the set itself remain the **top** portion — the
+   * heaviest part, done fresh. That split is not cosmetic: it is what lets the
+   * statistics stay honest. Drops are added to volume everywhere volume is
+   * counted, and excluded from every strength figure — personal bests, the
+   * estimated 1RM behind the strength curve, and the working weight the
+   * overload coach reads.
+   *
+   * The reason is that a drop happens pre-fatigued, seconds after failure.
+   * Eight reps at 40kg immediately after failing at 60kg is not evidence that
+   * eight fresh reps at 40kg are available, and running it through Epley would
+   * mint a personal best nobody actually set.
+   *
+   * Absent rather than empty on an ordinary set, so nothing has to distinguish
+   * "no drops" from "a drop set with nothing in it".
+   */
+  drops: z.array(performedDropSchema).max(6).optional(),
 });
 
 export const sessionExerciseSchema = z.object({
@@ -74,12 +106,21 @@ export const workoutSessionSchema = z.object({
 export type WorkoutSession = z.infer<typeof workoutSessionSchema>;
 export type SessionExercise = z.infer<typeof sessionExerciseSchema>;
 export type PerformedSet = z.infer<typeof performedSetSchema>;
+export type PerformedDrop = z.infer<typeof performedDropSchema>;
 export type SessionSource = z.infer<typeof sessionSourceSchema>;
+
+const PerformedDropMongooseSchema = {
+  reps: { type: Number, required: true, min: 0 },
+  weight: { type: Number, required: true, min: 0 },
+};
 
 const PerformedSetMongooseSchema = {
   reps: { type: Number, required: true, min: 0 },
   weight: { type: Number, required: true, min: 0 },
   rpe: { type: Number, min: 1, max: 10 },
+  // No `default: []` — an ordinary set should have no `drops` key at all
+  // rather than an empty array that reads as "a drop set with no drops".
+  drops: { type: [PerformedDropMongooseSchema] },
 };
 
 const SessionExerciseMongooseSchema = {
