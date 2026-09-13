@@ -189,6 +189,67 @@ describe('WorkoutStatsService', () => {
     });
   });
 
+  /**
+   * Drop sets, end to end through the real service rather than through
+   * set-math directly. The split is only worth anything if it survives the
+   * path the app actually uses.
+   */
+  describe('drop sets', () => {
+    // 8 @ 50 to failure, then 14 @ 45 pre-fatigued — a machine stack drop.
+    const withDrop = () =>
+      session(daysAgo(2), [
+        {
+          name: 'Chest Press',
+          sets: [
+            { reps: 8, weight: 50, drops: [{ reps: 14, weight: 45 }] },
+          ],
+        },
+      ]);
+
+    it('counts the drop toward the day’s volume', async () => {
+      withData([withDrop()]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Chest Press');
+      // 8x50 = 400, plus 14x45 = 630.
+      expect(points[0].volume).toBe(1030);
+    });
+
+    /**
+     * The personal best must come from the top portion. Epley ranks the drop
+     * higher (66.0 vs 63.3), so a service that scored drops as sets would post
+     * a record at a weight this user never lifted fresh.
+     */
+    it('never lets a drop set a personal best', async () => {
+      withData([withDrop()]);
+
+      const { personalBests } = await service.getStats(USER);
+      const best = personalBests.find((p) => p.exercise === 'Chest Press');
+
+      expect(best?.weight).toBe(50);
+      expect(best?.reps).toBe(8);
+      expect(best?.estimatedOneRepMax).toBeCloseTo(63.3, 1);
+    });
+
+    it('counts one set, not one per drop', async () => {
+      withData([withDrop()]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Chest Press');
+      expect(points[0].sets).toBe(1);
+    });
+
+    it('leaves a set with no drops completely unchanged', async () => {
+      withData([
+        session(daysAgo(2), [
+          { name: 'Chest Press', sets: [{ reps: 8, weight: 50 }] },
+        ]),
+      ]);
+
+      const { points } = await service.getExerciseHistory(USER, 'Chest Press');
+      expect(points[0].volume).toBe(400);
+      expect(points[0].sets).toBe(1);
+    });
+  });
+
   describe('adherence', () => {
     it('is null when no active plan defines what was planned', async () => {
       withData([session(daysAgo(2))], []);

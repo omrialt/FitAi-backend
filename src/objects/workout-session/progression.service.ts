@@ -5,6 +5,7 @@ import { Model, Types, isValidObjectId } from 'mongoose';
 import { WorkoutStatsService, FatigueSignal } from './workout-stats.service';
 import { ExerciseService } from '../exercise/exercise.service';
 import type { Equipment } from '../exercise/exercise.schema';
+import { topWeight } from './set-math';
 
 /**
  * What to do next session: add load, add a rep, or back off.
@@ -112,7 +113,12 @@ interface SessionRow {
   performedAt: Date;
   exercises?: {
     name: string;
-    sets?: { reps: number; weight: number; rpe?: number }[];
+    sets?: {
+      reps: number;
+      weight: number;
+      rpe?: number;
+      drops?: { reps: number; weight: number }[];
+    }[];
   }[];
 }
 
@@ -462,7 +468,10 @@ export class ProgressionService {
             rpeCount += 1;
           }
 
-          const weight = set.weight || 0;
+          // `topWeight`, not `set.weight`, so this reads as a deliberate
+          // strength figure: the drops below it are lighter by definition and
+          // must not be mistaken for the working weight.
+          const weight = topWeight(set);
           if (weight > record.topWeight) {
             // A heavier set redefines the working load, so the reps counted
             // at the old one no longer describe it.

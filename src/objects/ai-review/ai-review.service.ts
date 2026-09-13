@@ -9,6 +9,7 @@ import {
   AnthropicService,
   DEFAULT_MODEL,
 } from '../../common/anthropic/anthropic.service';
+import { setVolume } from '../workout-session/set-math';
 
 /**
  * The weekly training review — the first thing in FitAi that is actually AI.
@@ -135,7 +136,15 @@ export class AiReviewService {
         })
         .select('exercises')
         .lean<
-          { exercises?: { sets?: { reps: number; weight: number }[] }[] }[]
+          {
+            exercises?: {
+              sets?: {
+                reps: number;
+                weight: number;
+                drops?: { reps: number; weight: number }[];
+              }[];
+            }[];
+          }[]
         >()
         .exec(),
     ]);
@@ -146,7 +155,7 @@ export class AiReviewService {
     for (const session of sessions) {
       for (const exercise of session.exercises ?? []) {
         for (const set of exercise.sets ?? []) {
-          totalVolumeKg += (set.weight || 0) * (set.reps || 0);
+          totalVolumeKg += setVolume(set);
         }
       }
     }
