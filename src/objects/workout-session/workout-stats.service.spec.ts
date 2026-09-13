@@ -34,6 +34,26 @@ function session(
   return { performedAt, exercises };
 }
 
+/**
+ * Midday of the calendar week `n` weeks before this one.
+ *
+ * Not `daysAgo(7 * n)`: a day offset crosses a different number of week
+ * boundaries depending on which weekday it is counted from — "eight days ago"
+ * is last week from Monday to Saturday and two weeks ago on a Sunday. Any
+ * assertion about *weeks* has to place its sessions by week, or it passes six
+ * days out of seven and fails on the seventh for no reason a reader can see.
+ */
+function weeksAgo(n: number): Date {
+  const now = new Date();
+  const d = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - now.getDay() - 7 * n + 3,
+  );
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
+
 /** A block of identical sessions, one every `everyDays` across `days`. */
 function block(
   fromDaysAgo: number,
@@ -129,7 +149,7 @@ describe('WorkoutStatsService', () => {
     // Without the grace period the number would collapse to zero every Sunday
     // until the first session of the week.
     it('keeps the streak alive when the last workout was last week', async () => {
-      withData([session(daysAgo(14)), session(daysAgo(8))]);
+      withData([session(weeksAgo(2)), session(weeksAgo(1))]);
 
       const { streak } = await service.getStats(USER);
       expect(streak.currentWeeks).toBeGreaterThanOrEqual(1);
@@ -143,10 +163,12 @@ describe('WorkoutStatsService', () => {
      * had trained a few days earlier, on some days of the week and not others.
      *
      * The test above exercised almost exactly that shape and still passed for
-     * five days out of seven, because it reads the real clock. That is the
-     * whole reason the bug survived six revisions of this report and a green
-     * suite: it only reproduces if you happen to run the tests on a Thursday
-     * or a Friday. It was found on a Thursday.
+     * five days out of seven, because it read the real clock and placed its
+     * sessions with `daysAgo(8)`. That is the whole reason the bug survived
+     * six revisions of this report and a green suite: it only reproduced if
+     * you happened to run the tests on a Thursday or a Friday. It was found
+     * on a Thursday. (That test now uses `weeksAgo`, and the same day-offset
+     * trap is what made it fail on a Sunday after the fix landed.)
      *
      * So this pins the clock to each weekday in turn and places the sessions
      * by calendar week rather than by a day offset — "eight days ago" is
@@ -158,18 +180,9 @@ describe('WorkoutStatsService', () => {
     describe('the week boundary does not move with the day it is checked', () => {
       const SUNDAY = new Date(2026, 8, 6, 9, 0, 0); // 6 Sep 2026, local
 
-      /** Midweek of the calendar week `n` weeks before the pinned today. */
-      const midOfWeeksAgo = (n: number): Date => {
-        const now = new Date();
-        const d = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate() - now.getDay() - 7 * n + 3,
-        );
-        d.setHours(12, 0, 0, 0);
-        return d;
-      };
-
+      // `weeksAgo` reads the clock through `new Date()`, so under fake timers
+      // it places sessions relative to the pinned today rather than the real
+      // one — which is the whole point of pinning.
       afterEach(() => jest.useRealTimers());
 
       for (let offset = 0; offset < 7; offset++) {
@@ -179,7 +192,7 @@ describe('WorkoutStatsService', () => {
         it(`counts two trained weeks when checked on a ${weekday}`, async () => {
           jest.useFakeTimers().setSystemTime(today);
 
-          withData([session(midOfWeeksAgo(2)), session(midOfWeeksAgo(1))]);
+          withData([session(weeksAgo(2)), session(weeksAgo(1))]);
 
           const { streak } = await service.getStats(USER);
           // Last week and the week before: two, on every day of the week.
