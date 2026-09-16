@@ -17,6 +17,7 @@ import { TrainingPlanModule } from './objects/training-plan/training-plan.module
 import { NutritionPlanModule } from './objects/nutrition-plan/nutrition-plan.module';
 import { AiRecommendationModule } from './objects/ai-recommendation/ai-recommendation.module';
 import { PhysicalDataModule } from './objects/physical-data/physical-data.module';
+import { PhysicalTargetModule } from './objects/physical-target/physical-target.module';
 import { ProgressStatsModule } from './objects/progress-stats/progress-stats.module';
 import { WorkoutSessionModule } from './objects/workout-session/workout-session.module';
 import { ExerciseModule } from './objects/exercise/exercise.module';
@@ -71,6 +72,7 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     MealLogModule,
     AiRecommendationModule,
     PhysicalDataModule,
+    PhysicalTargetModule,
     // Photos are private on upload and shared one at a time. Deliberately not
     // covered by UserOwnershipGuard: a trainer's access to the measurements
     // grants nothing here.
