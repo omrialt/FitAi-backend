@@ -57,13 +57,20 @@ const targetValuesDefinition = {
   legs: { type: Number },
 };
 
+// A nested object definition becomes a subdocument, which Mongoose gives its
+// own `_id` by default - that id then shows up as a bogus "metric" key to any
+// client iterating the values. These are plain value bags, so opt out.
+const targetValuesSchemaDefinition = new Schema(targetValuesDefinition, {
+  _id: false,
+});
+
 export const PhysicalTargetSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, trim: true, maxlength: 100 },
     targetDate: { type: Date, required: true },
-    targetValues: { type: targetValuesDefinition, required: true },
-    startValues: { type: targetValuesDefinition, required: false },
+    targetValues: { type: targetValuesSchemaDefinition, required: true },
+    startValues: { type: targetValuesSchemaDefinition, required: false },
     startDate: { type: Date, required: true, default: Date.now },
     status: {
       type: String,
