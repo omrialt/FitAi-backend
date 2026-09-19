@@ -87,12 +87,22 @@ export class WorkoutSessionService {
     }
   }
 
-  /** One user's sessions, newest first. */
+  /**
+   * One user's sessions, newest first.
+   *
+   * `planId` and `dayName` narrow it to one day of one plan, which is what
+   * the logger asks for when it opens: the last time this day was trained,
+   * `limit: 1`. Both are indexed — `planId` by its own index, and the sort
+   * rides the `{ userId, performedAt }` one.
+   */
   async findByUserId(
     userId: string,
     query: ListWorkoutSessionsDto = {},
   ): Promise<WorkoutSessionDocument[]> {
     const filter: Record<string, unknown> = { userId };
+
+    if (query.planId) filter.planId = query.planId;
+    if (query.dayName) filter.dayName = query.dayName;
 
     const range: Record<string, Date> = {};
     if (query.from) range.$gte = new Date(query.from);

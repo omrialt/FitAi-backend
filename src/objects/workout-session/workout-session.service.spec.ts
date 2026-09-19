@@ -7,6 +7,7 @@ import { WorkoutSessionService } from './workout-session.service';
 const OWNER = new Types.ObjectId().toHexString();
 const STRANGER = new Types.ObjectId().toHexString();
 const SESSION_ID = new Types.ObjectId().toHexString();
+const PLAN_ID = new Types.ObjectId().toHexString();
 
 /** Satisfies the `.find().sort().limit().exec()` chain. */
 function chain(result: unknown) {
@@ -200,6 +201,20 @@ describe('WorkoutSessionService', () => {
 
       const filter = sessionModel.find.mock.calls[0][0];
       expect(filter).toEqual({ userId: OWNER });
+    });
+
+    it('narrows to one day of one plan when asked', async () => {
+      await service.findByUserId(OWNER, {
+        planId: PLAN_ID,
+        dayName: 'Upper A',
+        limit: 1,
+      });
+
+      expect(sessionModel.find.mock.calls[0][0]).toEqual({
+        userId: OWNER,
+        planId: PLAN_ID,
+        dayName: 'Upper A',
+      });
     });
   });
 
