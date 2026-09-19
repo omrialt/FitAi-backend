@@ -186,6 +186,29 @@ export class ListWorkoutSessionsDto {
   @IsDateString()
   to?: string;
 
+  /**
+   * Narrow to the sessions logged against one plan.
+   *
+   * `@IsMongoId` rather than `@IsString`: an unparseable id reaching the
+   * filter is a Mongoose CastError — a 500 for what is a bad request.
+   */
+  @IsOptional()
+  @IsMongoId()
+  planId?: string;
+
+  /**
+   * Narrow to one day of that plan, by the name it was performed under.
+   *
+   * The name and not an index, because that is what a session stores. It is
+   * denormalised precisely so the log survives the plan being edited or
+   * deleted, and an index into a `days` array that may since have been
+   * reordered would point at a different workout.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  dayName?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
