@@ -45,6 +45,38 @@ export class TrainerAccessService {
     return connection !== null;
   }
 
+  /**
+   * Every accepted connection this user is part of, from either side.
+   *
+   * `listClientIds` answers the trainer's half only, which is all authorization
+   * ever needed. A conversation needs both: the client's counterpart is their
+   * trainer, and the same person can be a trainer to one user and a client of
+   * another. Returning the pair rather than a flat list of ids keeps the
+   * direction — who is the trainer — attached to it, because that is what the
+   * message thread is keyed on.
+   */
+  async listAcceptedPairs(
+    userId: string,
+  ): Promise<{ trainerId: string; clientId: string }[]> {
+    if (!isValidObjectId(userId)) {
+      return [];
+    }
+
+    const connections = await this.connectionModel
+      .find({
+        status: 'accepted',
+        $or: [{ trainerId: userId }, { clientId: userId }],
+      })
+      .select('trainerId clientId')
+      .lean()
+      .exec();
+
+    return connections.map((c) => ({
+      trainerId: getIdString(c.trainerId),
+      clientId: getIdString(c.clientId),
+    }));
+  }
+
   /** Client ids this trainer currently coaches. */
   async listClientIds(trainerId: string): Promise<string[]> {
     if (!isValidObjectId(trainerId)) {
