@@ -29,6 +29,7 @@ import { BodyPhotoModule } from './objects/body-photo/body-photo.module';
 import { MealLogModule } from './objects/meal-log/meal-log.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
+import { TrainerDashboardModule } from './objects/trainer-dashboard/trainer-dashboard.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { TrainerAccessModule } from './common/trainer-access/trainer-access.module';
 import { NodemailerModule } from './common/nodemailer/nodemailer.module';
@@ -96,6 +97,9 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     AiCoachModule,
     CalendarSyncModule,
     TrainerConnectionModule,
+    // The roster seen sideways: every other trainer-facing screen answers a
+    // question about one client, this one answers which client to open.
+    TrainerDashboardModule,
   ],
   controllers: [HealthController],
   providers: [
