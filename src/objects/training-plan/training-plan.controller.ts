@@ -13,6 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { TrainingPlanService } from './training-plan.service';
 import { TemplateService } from './template.service';
+import { PlanAssignmentService } from './plan-assignment.service';
 import { TEMPLATE_IDS } from './periodization-templates';
 import { TrainingPlan, trainingPlanSchema } from './training-plan.schema';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -41,6 +42,16 @@ const trainingPlanUpdateBodySchema = trainingPlanCreateBodySchema.omit({
 const shareBodySchema = z.object({
   userIds: z.array(z.string()).min(1),
 });
+const assignBodySchema = z.object({
+  clientIds: z.array(z.string().min(1)).min(1, 'Pick at least one client'),
+  startDate: z.coerce.date().optional(),
+  syncWithParent: z.boolean().optional(),
+  /** Assign again to a client who already has this template. */
+  force: z.boolean().optional(),
+});
+const saveAsTemplateBodySchema = z.object({
+  title: z.string().min(1).max(120).optional(),
+});
 const fromTemplateBodySchema = z.object({
   templateId: z.enum(TEMPLATE_IDS as [string, ...string[]]),
   /** Which weekdays to place the cycle on, 0 = Sunday. */
@@ -55,6 +66,7 @@ export class TrainingPlanController {
   constructor(
     private readonly trainingPlanService: TrainingPlanService,
     private readonly templateService: TemplateService,
+    private readonly planAssignmentService: PlanAssignmentService,
   ) {}
 
   @Post()
@@ -80,6 +92,16 @@ export class TrainingPlanController {
   @Roles('user', 'trainer', 'admin')
   listTemplates() {
     return this.templateService.list();
+  }
+
+  /**
+   * The trainer's own plan library — their templates, not the periodization
+   * ones above. Declared before `@Get(':id')` for the same reason that one is.
+   */
+  @Get('library')
+  @Roles('trainer', 'admin')
+  listLibrary(@Request() req: AuthRequest) {
+    return this.planAssignmentService.listLibrary(req.user.id);
   }
 
   /**
@@ -148,6 +170,47 @@ export class TrainingPlanController {
   @OwnsUserParam()
   async findByUserWithShared(@Param('userId') userId: string) {
     return this.trainingPlanService.findByUserIdWithShared(userId);
+  }
+
+  /**
+   * One template, many clients. Returns 200 with a row per client even when
+   * some rows failed — a batch that throws halfway has already written the
+   * plans before it and says nothing about which.
+   */
+  @Post(':id/assign')
+  @Roles('trainer', 'admin')
+  async assign(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(assignBodySchema))
+    body: {
+      clientIds: string[];
+      startDate?: Date;
+      syncWithParent?: boolean;
+      force?: boolean;
+    },
+    @Request() req: AuthRequest,
+  ) {
+    return this.planAssignmentService.assign(id, req.user.id, body.clientIds, {
+      startDate: body.startDate,
+      syncWithParent: body.syncWithParent,
+      force: body.force,
+    });
+  }
+
+  /** Copy an existing plan into the library. The original is untouched. */
+  @Post(':id/save-as-template')
+  @Roles('trainer', 'admin')
+  async saveAsTemplate(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(saveAsTemplateBodySchema))
+    body: { title?: string },
+    @Request() req: AuthRequest,
+  ) {
+    return this.planAssignmentService.saveAsTemplate(
+      id,
+      req.user.id,
+      body.title,
+    );
   }
 
   @Post(':id/share')

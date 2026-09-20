@@ -136,6 +136,14 @@ export const trainingPlanSchema = z.object({
   activeByUsers: z
     .array(z.union([z.string(), z.object({}).passthrough()]))
     .default([]),
+  /**
+   * A plan kept as a pattern rather than as somebody's week.
+   *
+   * A template is owned by the trainer who wrote it (`userId` is theirs), sits
+   * on nobody's calendar, and is excluded from the ordinary plan lists — it is
+   * the thing that gets copied, not the thing that gets trained.
+   */
+  isTemplate: z.boolean().default(false),
   // Clone tracking fields
   initialParentId: z
     .union([z.string(), z.object({}).passthrough()])
@@ -285,6 +293,8 @@ export const TrainingPlanSchema = new Schema(
       default: [],
     },
     activeByUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // A pattern to copy, not a plan to train — see the Zod field above.
+    isTemplate: { type: Boolean, default: false },
     // Clone tracking fields
     initialParentId: {
       type: Schema.Types.ObjectId,
@@ -336,6 +346,8 @@ TrainingPlanSchema.index({ 'sharedAccess.accessLevel': 1 });
 TrainingPlanSchema.index({ activeByUsers: 1 });
 TrainingPlanSchema.index({ initialParentId: 1 });
 TrainingPlanSchema.index({ initialParentId: 1, syncWithParent: 1 });
+// The trainer's library: their own templates, newest first.
+TrainingPlanSchema.index({ userId: 1, isTemplate: 1, createdAt: -1 });
 // New indexes for added fields
 TrainingPlanSchema.index({ 'days.dayOfWeek': 1 });
 TrainingPlanSchema.index({ startDate: 1 });

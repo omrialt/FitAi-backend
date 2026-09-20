@@ -4,6 +4,7 @@ import { TrainingPlanSchema } from './training-plan.schema';
 import { UserSchema } from '../user/user.schema';
 import { TrainingPlanService } from './training-plan.service';
 import { TemplateService } from './template.service';
+import { PlanAssignmentService } from './plan-assignment.service';
 import { TrainingPlanController } from './training-plan.controller';
 import { LoggerMiddleware } from '../../common/middleware/logger.middleware';
 import { AuthModule } from '../auth/auth.module';
@@ -28,8 +29,8 @@ import { WorkoutSessionModule } from '../workout-session/workout-session.module'
     WorkoutSessionModule,
   ],
   controllers: [TrainingPlanController],
-  providers: [TrainingPlanService, TemplateService],
-  exports: [TrainingPlanService, TemplateService],
+  providers: [TrainingPlanService, TemplateService, PlanAssignmentService],
+  exports: [TrainingPlanService, TemplateService, PlanAssignmentService],
 })
 export class TrainingPlanModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
