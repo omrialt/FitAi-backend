@@ -101,6 +101,12 @@ export class TrainingPlanService {
       };
     }
 
+    // Templates belong to the library, not to this list. `$ne: true` rather
+    // than `false` on purpose: every plan written before the field existed
+    // has no `isTemplate` at all, and `{ isTemplate: false }` would hide all
+    // of them.
+    filter.isTemplate = { $ne: true };
+
     const [plans, total] = await Promise.all([
       this.trainingPlanModel
         .find(filter)
@@ -437,6 +443,9 @@ export class TrainingPlanService {
       const plans = await this.trainingPlanModel
         .find({
           $or: [{ userId }, { sharedWith: userId }],
+          // Same reason as in findAll: a template is a pattern, not a plan
+          // this user is training.
+          isTemplate: { $ne: true },
         })
         .populate('userId', 'fullName email')
         .populate('trainerId', 'fullName email')

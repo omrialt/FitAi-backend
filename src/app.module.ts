@@ -29,6 +29,9 @@ import { BodyPhotoModule } from './objects/body-photo/body-photo.module';
 import { MealLogModule } from './objects/meal-log/meal-log.module';
 import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module';
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
+import { TrainerDashboardModule } from './objects/trainer-dashboard/trainer-dashboard.module';
+import { MessageModule } from './objects/message/message.module';
+import { TrainerNoteModule } from './objects/trainer-note/trainer-note.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { TrainerAccessModule } from './common/trainer-access/trainer-access.module';
 import { NodemailerModule } from './common/nodemailer/nodemailer.module';
@@ -96,6 +99,15 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     AiCoachModule,
     CalendarSyncModule,
     TrainerConnectionModule,
+    // The roster seen sideways: every other trainer-facing screen answers a
+    // question about one client, this one answers which client to open.
+    TrainerDashboardModule,
+    // The first channel in the app that carries a person's own words to
+    // another person. Both ends are gated on the same accepted connection.
+    MessageModule,
+    // And the half that is not a conversation: what the coach writes about a
+    // client, which the client never sees.
+    TrainerNoteModule,
   ],
   controllers: [HealthController],
   providers: [
