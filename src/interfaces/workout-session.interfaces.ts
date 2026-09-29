@@ -210,13 +210,19 @@ export class ListWorkoutSessionsDto {
   dayName?: string;
 
   /**
-   * Free text, matched against the workout's name, plan, notes and every
-   * exercise and muscle group in it. What the history page's search box sends.
+   * Free text, matched against the workout's name, notes and every exercise
+   * and muscle group in it. Not the plan title — that has `planTitle`.
    */
   @IsOptional()
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  /** Only sessions logged under this plan title (exact, any case). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  planTitle?: string;
 
   /** Only sessions containing this exercise (exact name, any case). */
   @IsOptional()
