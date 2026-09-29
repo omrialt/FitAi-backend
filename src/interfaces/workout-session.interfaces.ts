@@ -209,12 +209,56 @@ export class ListWorkoutSessionsDto {
   @MaxLength(120)
   dayName?: string;
 
+  /**
+   * Free text, matched against the workout's name, plan, notes and every
+   * exercise and muscle group in it. What the history page's search box sends.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  /** Only sessions containing this exercise (exact name, any case). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  exercise?: string;
+
+  /** Only sessions that trained this muscle group. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  muscleGroup?: string;
+
+  /**
+   * Up to 500: the history page filters and compares across the whole log,
+   * and the old ceiling of 200 silently cut an active year in half.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(500)
   limit?: number;
+}
+
+export class ExerciseComparisonQueryDto {
+  /**
+   * Which muscle group to compare within. Omitted means the one with the most
+   * logged exercises, so the panel opens on a real comparison.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  muscleGroup?: string;
+
+  /** Bounds the curves only — the list of muscle groups stays all-time. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(7)
+  @Max(3650)
+  days?: number;
 }
 
 export class OverloadQueryDto {

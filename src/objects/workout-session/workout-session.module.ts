@@ -4,6 +4,7 @@ import { WorkoutSessionSchema } from './workout-session.schema';
 import { WorkoutSessionService } from './workout-session.service';
 import { WorkoutStatsService } from './workout-stats.service';
 import { ProgressionService } from './progression.service';
+import { WorkoutInsightsService } from './workout-insights.service';
 import { WorkoutSessionController } from './workout-session.controller';
 import { TrainingPlanSchema } from '../training-plan/training-plan.schema';
 import { ExerciseModule } from '../exercise/exercise.module';
@@ -22,7 +23,12 @@ import { ExerciseModule } from '../exercise/exercise.module';
     ExerciseModule,
   ],
   controllers: [WorkoutSessionController],
-  providers: [WorkoutSessionService, WorkoutStatsService, ProgressionService],
+  providers: [
+    WorkoutSessionService,
+    WorkoutStatsService,
+    ProgressionService,
+    WorkoutInsightsService,
+  ],
   exports: [WorkoutSessionService, WorkoutStatsService, ProgressionService],
 })
 export class WorkoutSessionModule {}
