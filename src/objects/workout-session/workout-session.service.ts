@@ -118,6 +118,16 @@ export class WorkoutSessionService {
         'i',
       );
     }
+    // The plan is a filter of its own, not part of the free-text search: plan
+    // names such as "Upper / Lower Split" contain the very words people type
+    // to find one workout, so "lower" used to return every Upper day too
+    // (N-53).
+    if (query.planTitle) {
+      filter.planTitle = new RegExp(
+        `^${escapeRegex(query.planTitle.trim())}$`,
+        'i',
+      );
+    }
     if (query.muscleGroup) {
       filter['exercises.muscleGroup'] = new RegExp(
         `^${escapeRegex(query.muscleGroup.trim())}$`,
@@ -125,15 +135,15 @@ export class WorkoutSessionService {
       );
     }
 
-    // Free text over everything a user would remember a workout by. Escaped,
-    // so a typed "(" is a character and not a 500. The `userId` prefix keeps
-    // the scan to one user's log, which is hundreds of documents.
+    // Free text over what a user would remember one workout by — its name,
+    // its exercises and muscles, its notes. Not the plan (see above).
+    // Escaped, so a typed "(" is a character and not a 500. The `userId`
+    // prefix keeps the scan to one user's log, which is hundreds of documents.
     const search = query.search?.trim();
     if (search) {
       const term = new RegExp(escapeRegex(search), 'i');
       filter.$or = [
         { dayName: term },
-        { planTitle: term },
         { notes: term },
         { 'exercises.name': term },
         { 'exercises.muscleGroup': term },

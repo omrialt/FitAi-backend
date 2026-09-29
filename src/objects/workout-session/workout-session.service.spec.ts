@@ -217,7 +217,7 @@ describe('WorkoutSessionService', () => {
       });
     });
 
-    it('matches free-text search across names, plan, notes and muscles', async () => {
+    it('matches free-text search across names, notes and muscles', async () => {
       await service.findByUserId(OWNER, { search: 'bench' });
 
       const filter = sessionModel.find.mock.calls[0][0] as {
@@ -226,12 +226,12 @@ describe('WorkoutSessionService', () => {
       const fields = filter.$or.map((clause) => Object.keys(clause)[0]);
       expect(fields).toEqual([
         'dayName',
-        'planTitle',
         'notes',
         'exercises.name',
         'exercises.muscleGroup',
       ]);
-      expect(filter.$or[3]['exercises.name'].test('Bench Press')).toBe(true);
+      const byName = filter.$or.find((clause) => 'exercises.name' in clause);
+      expect(byName?.['exercises.name'].test('Bench Press')).toBe(true);
     });
 
     it('treats regex syntax in the search as plain text', async () => {
@@ -243,6 +243,28 @@ describe('WorkoutSessionService', () => {
       const term = filter.$or[0].dayName;
       expect(term.test('leg press (machine)')).toBe(true);
       expect(term.test('leg press')).toBe(false);
+    });
+
+    it('keeps the plan title out of free-text search (N-53)', async () => {
+      await service.findByUserId(OWNER, { search: 'lower' });
+
+      const filter = sessionModel.find.mock.calls[0][0] as {
+        $or: Record<string, RegExp>[];
+        planTitle?: unknown;
+      };
+      const fields = filter.$or.map((clause) => Object.keys(clause)[0]);
+      expect(fields).not.toContain('planTitle');
+      expect(filter.planTitle).toBeUndefined();
+    });
+
+    it('filters by exact plan title, ignoring case', async () => {
+      await service.findByUserId(OWNER, { planTitle: 'upper / lower split' });
+
+      const filter = sessionModel.find.mock.calls[0][0] as {
+        planTitle: RegExp;
+      };
+      expect(filter.planTitle.test('Upper / Lower Split')).toBe(true);
+      expect(filter.planTitle.test('Upper / Lower Split v2')).toBe(false);
     });
 
     it('filters by exact exercise and muscle group, ignoring case', async () => {
