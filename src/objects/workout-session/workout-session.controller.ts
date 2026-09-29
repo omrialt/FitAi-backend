@@ -15,11 +15,13 @@ import { AuthGuard } from '@nestjs/passport';
 import { WorkoutSessionService } from './workout-session.service';
 import { WorkoutStatsService } from './workout-stats.service';
 import { ProgressionService } from './progression.service';
+import { WorkoutInsightsService } from './workout-insights.service';
 // Value imports on purpose: `import type` erases the class, the emitted
 // parameter metadata becomes `Function`, and the global ValidationPipe then
 // passes `undefined` to the handler instead of the body.
 import {
   CreateWorkoutSessionDto,
+  ExerciseComparisonQueryDto,
   ExerciseHistoryQueryDto,
   ListWorkoutSessionsDto,
   OverloadQueryDto,
@@ -38,6 +40,7 @@ export class WorkoutSessionController {
     private readonly workoutSessionService: WorkoutSessionService,
     private readonly workoutStatsService: WorkoutStatsService,
     private readonly progressionService: ProgressionService,
+    private readonly workoutInsightsService: WorkoutInsightsService,
   ) {}
 
   /**
@@ -143,6 +146,37 @@ export class WorkoutSessionController {
   @OwnsUserParam()
   getDeload(@Param('userId') userId: string) {
     return this.progressionService.getDeloadPrescription(userId);
+  }
+
+  /**
+   * Every workout type the user has logged — a session's `dayName` — with
+   * its frequency, volume trend and which lifts in it are moving. What the
+   * history page's type filter and insights card read. Same `@OwnsUserParam`
+   * as the other user-scoped reads.
+   */
+  @Get('user/:userId/workout-types')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getWorkoutTypes(@Param('userId') userId: string) {
+    return this.workoutInsightsService.getWorkoutTypes(userId);
+  }
+
+  /**
+   * Every exercise in one muscle group side by side, one e1RM curve each, so
+   * the bench and the incline press can be read against each other.
+   */
+  @Get('user/:userId/exercise-comparison')
+  @Roles('user', 'trainer', 'admin')
+  @OwnsUserParam()
+  getExerciseComparison(
+    @Param('userId') userId: string,
+    @Query() query: ExerciseComparisonQueryDto,
+  ) {
+    return this.workoutInsightsService.getExerciseComparison(
+      userId,
+      query.muscleGroup,
+      query.days,
+    );
   }
 
   @Get(':id')

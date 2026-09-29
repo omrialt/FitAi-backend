@@ -190,7 +190,11 @@ export class ProgressionService {
     const deloading = fatigue.level === 'deload';
     const byExercise = this.groupByExercise(sessions);
 
-    const suggestions: OverloadSuggestion[] = [];
+    // Concurrently, not one `await` per lift: each suggestion asks the
+    // catalogue for its equipment with a case-insensitive regex no index can
+    // serve, and awaiting them in turn made this the slowest call on the
+    // dashboard (~620ms for seven lifts, against ~140ms for everything else).
+    const pending: Promise<OverloadSuggestion>[] = [];
 
     for (const [, records] of byExercise) {
       if (records.length < MIN_DAYS_LOGGED) continue;
@@ -198,15 +202,15 @@ export class ProgressionService {
       const latest = records[records.length - 1];
       if (exercise && !this.matches(latest.name, exercise)) continue;
 
-      suggestions.push(
-        await this.suggestFor(records, latest, deloading),
-      );
+      pending.push(this.suggestFor(records, latest, deloading));
     }
+
+    const suggestions = await Promise.all(pending);
 
     // Most recently trained first: the lift you did yesterday is the one you
     // are about to repeat, and the one a suggestion is actionable for.
-    suggestions.sort(
-      (a, b) => b.lastPerformedAt.localeCompare(a.lastPerformedAt),
+    suggestions.sort((a, b) =>
+      b.lastPerformedAt.localeCompare(a.lastPerformedAt),
     );
 
     return {

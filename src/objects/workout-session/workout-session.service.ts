@@ -13,6 +13,11 @@ import type {
 } from '../../interfaces/workout-session.interfaces';
 import { getIdString } from '../../utils/helpers';
 
+/** Anything a user might type that regex would otherwise read as syntax. */
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** What a caller is, for the ownership checks on id-addressed routes. */
 interface Caller {
   id: string;
@@ -103,6 +108,37 @@ export class WorkoutSessionService {
 
     if (query.planId) filter.planId = query.planId;
     if (query.dayName) filter.dayName = query.dayName;
+
+    // Exact, case-insensitive: the history page's filters pick a value out of
+    // what was logged, and "Bench Press" must not also match "Bench Press
+    // (Close Grip)".
+    if (query.exercise) {
+      filter['exercises.name'] = new RegExp(
+        `^${escapeRegex(query.exercise.trim())}$`,
+        'i',
+      );
+    }
+    if (query.muscleGroup) {
+      filter['exercises.muscleGroup'] = new RegExp(
+        `^${escapeRegex(query.muscleGroup.trim())}$`,
+        'i',
+      );
+    }
+
+    // Free text over everything a user would remember a workout by. Escaped,
+    // so a typed "(" is a character and not a 500. The `userId` prefix keeps
+    // the scan to one user's log, which is hundreds of documents.
+    const search = query.search?.trim();
+    if (search) {
+      const term = new RegExp(escapeRegex(search), 'i');
+      filter.$or = [
+        { dayName: term },
+        { planTitle: term },
+        { notes: term },
+        { 'exercises.name': term },
+        { 'exercises.muscleGroup': term },
+      ];
+    }
 
     const range: Record<string, Date> = {};
     if (query.from) range.$gte = new Date(query.from);

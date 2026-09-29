@@ -216,6 +216,51 @@ describe('WorkoutSessionService', () => {
         dayName: 'Upper A',
       });
     });
+
+    it('matches free-text search across names, plan, notes and muscles', async () => {
+      await service.findByUserId(OWNER, { search: 'bench' });
+
+      const filter = sessionModel.find.mock.calls[0][0] as {
+        $or: Record<string, RegExp>[];
+      };
+      const fields = filter.$or.map((clause) => Object.keys(clause)[0]);
+      expect(fields).toEqual([
+        'dayName',
+        'planTitle',
+        'notes',
+        'exercises.name',
+        'exercises.muscleGroup',
+      ]);
+      expect(filter.$or[3]['exercises.name'].test('Bench Press')).toBe(true);
+    });
+
+    it('treats regex syntax in the search as plain text', async () => {
+      await service.findByUserId(OWNER, { search: 'press (' });
+
+      const filter = sessionModel.find.mock.calls[0][0] as {
+        $or: Record<string, RegExp>[];
+      };
+      const term = filter.$or[0].dayName;
+      expect(term.test('leg press (machine)')).toBe(true);
+      expect(term.test('leg press')).toBe(false);
+    });
+
+    it('filters by exact exercise and muscle group, ignoring case', async () => {
+      await service.findByUserId(OWNER, {
+        exercise: 'bench press',
+        muscleGroup: 'CHEST',
+      });
+
+      const filter = sessionModel.find.mock.calls[0][0] as Record<
+        string,
+        RegExp
+      >;
+      expect(filter['exercises.name'].test('Bench Press')).toBe(true);
+      expect(filter['exercises.name'].test('Bench Press (Close Grip)')).toBe(
+        false,
+      );
+      expect(filter['exercises.muscleGroup'].test('chest')).toBe(true);
+    });
   });
 
   describe('ownership', () => {
