@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MessageService } from './message.service';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
@@ -179,6 +184,52 @@ describe('MessageService', () => {
           `${String(doc.trainerId)}:${String(doc.clientId)}`,
       );
       expect(pairs[0]).toBe(pairs[1]);
+    });
+  });
+
+  describe('send limits', () => {
+    beforeEach(() => connections([[TRAINER, CLIENT]]));
+
+    it('refuses the 21st message in a minute with a 429', async () => {
+      messageModel.countDocuments.mockResolvedValueOnce(20);
+
+      const error = await service
+        .send(TRAINER, CLIENT, 'one more')
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+      expect(messageModel.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses past the hourly cap even when the last minute was quiet', async () => {
+      messageModel.countDocuments
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(200);
+
+      await expect(service.send(TRAINER, CLIENT, 'hi')).rejects.toThrow(
+        HttpException,
+      );
+      expect(messageModel.create).not.toHaveBeenCalled();
+    });
+
+    it('counts only what the caller sent', async () => {
+      await service.send(CLIENT, TRAINER, 'hi');
+
+      const [filter] = messageModel.countDocuments.mock.calls[0] as [
+        { senderId: Types.ObjectId; createdAt: { $gte: Date } },
+      ];
+      expect(String(filter.senderId)).toBe(CLIENT);
+      expect(filter.createdAt.$gte).toBeInstanceOf(Date);
+    });
+
+    it('tells a stranger "forbidden" before counting anything', async () => {
+      await expect(service.send(STRANGER, CLIENT, 'hi')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(messageModel.countDocuments).not.toHaveBeenCalled();
     });
   });
 
