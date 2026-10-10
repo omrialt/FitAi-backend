@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,7 +15,13 @@ import { PhysicalDataDocument } from '../physical-data/physical-data.schema';
 import { PhysicalDataService } from '../physical-data/physical-data.service';
 import { CreatePhysicalTargetDto } from '../../interfaces/physical-target.interfaces';
 import { handleMongoError } from '../../utils/mongo.helpers';
-import { assertOwnerOrAdmin, type Requester } from '../../utils/ownership';
+import {
+  assertOwnerOrAdmin,
+  isOwnerOrAdmin,
+  toIdString,
+  type Requester,
+} from '../../utils/ownership';
+import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
 
 type TargetMetric = keyof PhysicalTargetValues;
 const TARGET_METRICS: TargetMetric[] = [
@@ -64,11 +71,37 @@ export class PhysicalTargetService {
     @InjectModel('PhysicalTarget')
     private physicalTargetModel: Model<PhysicalTargetDocument>,
     private readonly physicalDataService: PhysicalDataService,
+    private readonly trainerAccess: TrainerAccessService,
   ) {}
 
+  /**
+   * A target for `createDto.userId`, set by `requester`.
+   *
+   * Usually the same person. A trainer may set one for a client — but only
+   * while the client's acceptance of them stands, checked here on every call,
+   * so a revoked connection stops it at once. The target is still the
+   * client's: `userId` is theirs, the starting values are read from *their*
+   * latest measurement, and `createdBy` only records who wrote it.
+   */
   async create(
     createDto: CreatePhysicalTargetDto & { userId: string },
+    requester?: Requester,
   ): Promise<PhysicalTargetDocument> {
+    if (requester && requester.id !== createDto.userId) {
+      const allowed =
+        requester.role === 'admin' ||
+        (requester.role === 'trainer' &&
+          (await this.trainerAccess.isAcceptedTrainerOf(
+            requester.id,
+            createDto.userId,
+          )));
+      if (!allowed) {
+        throw new ForbiddenException(
+          'You can only set targets for yourself or for your own clients',
+        );
+      }
+    }
+
     const targetMetrics = TARGET_METRICS.filter(
       (metric) => createDto.targetValues[metric] !== undefined,
     );
@@ -96,6 +129,7 @@ export class PhysicalTargetService {
         userId: new Types.ObjectId(createDto.userId),
         targetDate: new Date(createDto.targetDate),
         startValues,
+        createdBy: new Types.ObjectId(requester?.id ?? createDto.userId),
       });
       return await physicalTarget.save();
     } catch (error) {
@@ -226,18 +260,34 @@ export class PhysicalTargetService {
     });
   }
 
-  /** Load just the owner of a record and assert the requester matches it. */
+  /**
+   * Who may change a target: its owner, an admin, or the trainer who set it —
+   * the last only while still the owner's accepted trainer. A trainer never
+   * gets to edit a target the client set for themselves; that one is the
+   * client's own decision about their own body.
+   */
   private async assertCanModify(
     id: string,
     requester: Requester,
   ): Promise<void> {
     const existing = await this.physicalTargetModel
       .findById(id)
-      .select('userId')
+      .select('userId createdBy')
       .lean()
       .exec();
     if (!existing) {
       throw new NotFoundException(`Physical target with ID ${id} not found`);
+    }
+    if (isOwnerOrAdmin(existing.userId, requester)) return;
+
+    const ownerId = toIdString(existing.userId);
+    if (
+      requester.role === 'trainer' &&
+      ownerId &&
+      toIdString(existing.createdBy) === requester.id &&
+      (await this.trainerAccess.isAcceptedTrainerOf(requester.id, ownerId))
+    ) {
+      return;
     }
     assertOwnerOrAdmin(existing.userId, requester, 'target');
   }

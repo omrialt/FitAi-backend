@@ -7,9 +7,11 @@ import {
   computePercentComplete,
 } from './physical-target.service';
 import { PhysicalDataService } from '../physical-data/physical-data.service';
+import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
 
 const OWNER = new Types.ObjectId().toString();
 const STRANGER = new Types.ObjectId().toString();
+const TRAINER = new Types.ObjectId().toString();
 const TARGET_ID = new Types.ObjectId().toString();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -57,6 +59,7 @@ describe('PhysicalTargetService', () => {
     findByIdAndDelete: jest.Mock;
   };
   let physicalData: { findLatestByUserId: jest.Mock };
+  let trainerAccess: { isAcceptedTrainerOf: jest.Mock };
 
   beforeEach(async () => {
     saved = null;
@@ -82,11 +85,21 @@ describe('PhysicalTargetService', () => {
       }),
     };
 
+    // TRAINER is OWNER's accepted trainer; nobody else is anyone's.
+    trainerAccess = {
+      isAcceptedTrainerOf: jest
+        .fn()
+        .mockImplementation((t: string, c: string) =>
+          Promise.resolve(t === TRAINER && c === OWNER),
+        ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PhysicalTargetService,
         { provide: getModelToken('PhysicalTarget'), useValue: targetModel },
         { provide: PhysicalDataService, useValue: physicalData },
+        { provide: TrainerAccessService, useValue: trainerAccess },
       ],
     }).compile();
 
@@ -227,6 +240,85 @@ describe('PhysicalTargetService', () => {
         },
       ]);
       expect(progress.daysRemaining).toBeLessThan(0);
+    });
+  });
+
+  describe('targets set by a trainer', () => {
+    const trainer = { id: TRAINER, role: 'trainer' };
+    const target = {
+      userId: OWNER,
+      targetDate: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+      targetValues: { weightKg: 80 },
+    };
+
+    it("lets a connected trainer set one, owned by the client, from the client's numbers", async () => {
+      await service.create(target, trainer);
+
+      expect(String(saved?.userId)).toBe(OWNER);
+      expect(String(saved?.createdBy)).toBe(TRAINER);
+      expect(physicalData.findLatestByUserId).toHaveBeenCalledWith(OWNER);
+      expect(saved?.startValues).toEqual({ weightKg: 90 });
+    });
+
+    it('records the owner as the author of their own target', async () => {
+      await service.create(target, { id: OWNER, role: 'user' });
+      expect(String(saved?.createdBy)).toBe(OWNER);
+    });
+
+    it("refuses a trainer who is not this client's trainer", async () => {
+      await expect(
+        service.create({ ...target, userId: STRANGER }, trainer),
+      ).rejects.toThrow(ForbiddenException);
+      expect(saved).toBeNull();
+    });
+
+    it('refuses a client setting a target for someone else', async () => {
+      await expect(
+        service.create(target, { id: STRANGER, role: 'user' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('lets the trainer change a target they set', async () => {
+      targetModel.findById.mockReturnValue(
+        chain({ userId: OWNER, createdBy: TRAINER }),
+      );
+      await service.update(TARGET_ID, { status: 'achieved' }, trainer);
+      expect(targetModel.findByIdAndUpdate).toHaveBeenCalled();
+    });
+
+    it('never lets the trainer change a target the client set', async () => {
+      targetModel.findById.mockReturnValue(
+        chain({ userId: OWNER, createdBy: OWNER }),
+      );
+      await expect(
+        service.update(TARGET_ID, { status: 'abandoned' }, trainer),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(service.remove(TARGET_ID, trainer)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('stops a trainer whose connection was revoked, even on their own target', async () => {
+      targetModel.findById.mockReturnValue(
+        chain({ userId: OWNER, createdBy: TRAINER }),
+      );
+      trainerAccess.isAcceptedTrainerOf.mockResolvedValue(false);
+
+      await expect(service.remove(TARGET_ID, trainer)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('lets the client change a target their trainer set', async () => {
+      targetModel.findById.mockReturnValue(
+        chain({ userId: OWNER, createdBy: TRAINER }),
+      );
+      await service.update(
+        TARGET_ID,
+        { status: 'abandoned' },
+        { id: OWNER, role: 'user' },
+      );
+      expect(targetModel.findByIdAndUpdate).toHaveBeenCalled();
     });
   });
 });
