@@ -38,6 +38,8 @@ export const physicalTargetSchema = z.object({
   startValues: targetValuesSchema.optional(),
   startDate: z.date().default(() => new Date()),
   status: z.enum(physicalTargetStatusValues).default('active'),
+  closedAt: z.date().optional(),
+  createdBy: z.union([z.string(), z.object({}).passthrough()]).optional(),
   notes: z.string().trim().max(500).optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
@@ -77,6 +79,11 @@ export const PhysicalTargetSchema = new Schema(
       enum: physicalTargetStatusValues,
       default: 'active',
     },
+    // When the target was marked achieved or abandoned; absent while active.
+    closedAt: { type: Date },
+    // Who set the target. Absent on targets from before trainers could set
+    // them, which were all set by their owner.
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     notes: { type: String, trim: true, maxlength: 500 },
   },
   {

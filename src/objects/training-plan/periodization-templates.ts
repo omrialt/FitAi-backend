@@ -76,7 +76,8 @@ const straight = (
   sets: number,
   reps: number,
   percent: number | null = null,
-): TemplateSet[] => Array.from({ length: sets }, () => ({ reps, percentOfOneRepMax: percent }));
+): TemplateSet[] =>
+  Array.from({ length: sets }, () => ({ reps, percentOfOneRepMax: percent }));
 
 /**
  * 5/3/1's week-one main lift: 65/75/85, the last set taken to failure.

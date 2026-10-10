@@ -39,13 +39,19 @@ export class PhysicalTargetController {
     @Body() createDto: CreatePhysicalTargetDto,
     @Request() req: AuthRequest,
   ) {
-    // Body-supplied userId is honoured only for admins; everyone else sets
-    // targets against themselves no matter what they send.
+    // Body-supplied userId is honoured for admins and for trainers — the
+    // service then checks that a trainer is the accepted trainer of that
+    // client. Everyone else sets targets against themselves no matter what
+    // they send.
     const userId =
-      req.user.role === 'admin' && createDto.userId
+      (req.user.role === 'admin' || req.user.role === 'trainer') &&
+      createDto.userId
         ? createDto.userId
         : req.user.id;
-    return this.physicalTargetService.create({ ...createDto, userId });
+    return this.physicalTargetService.create(
+      { ...createDto, userId },
+      req.user,
+    );
   }
 
   @Get('user/:userId')

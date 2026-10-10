@@ -54,6 +54,8 @@ MessageSchema.index({ trainerId: 1, clientId: 1, createdAt: 1 });
 // The unread badge, per recipient side.
 MessageSchema.index({ clientId: 1, readAt: 1 });
 MessageSchema.index({ trainerId: 1, readAt: 1 });
+// The per-sender send limit counts by this.
+MessageSchema.index({ senderId: 1, createdAt: -1 });
 
 export type MessageDocument = HydratedDocument<Message>;
 export type MessageModel = Model<MessageDocument>;

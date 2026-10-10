@@ -33,14 +33,11 @@ jobs:
       # Not `npm run lint`: that script passes --fix, which would "pass" by
       # rewriting the working tree instead of reporting anything.
       #
-      # Non-blocking on purpose. The repo carries a long-standing baseline of
-      # ~46 problems (mostly no-unsafe-* around mongoose and jwt, and unused
-      # DTO imports) in files nobody is touching. Failing the build on those
-      # would mean every PR is red on day one, and a permanently red check is
-      # one nobody reads. Flip this to blocking once the baseline is cleared.
+      # Blocking since the baseline was cleared (gap analysis rev. 17). It was
+      # non-blocking while ~140 old problems would have made every PR red on
+      # day one; with zero, a new problem is a new problem.
       - name: Lint
         run: npx eslint "{src,apps,libs,test}/**/*.ts"
-        continue-on-error: true
 
       - name: Test
         run: npm test

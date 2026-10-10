@@ -47,7 +47,11 @@ describe('set-math', () => {
     });
 
     it('survives a bodyweight drop set, where weight is 0', () => {
-      const bodyweight = { reps: 12, weight: 0, drops: [{ reps: 8, weight: 0 }] };
+      const bodyweight = {
+        reps: 12,
+        weight: 0,
+        drops: [{ reps: 8, weight: 0 }],
+      };
       expect(setVolume(bodyweight)).toBe(0);
       expect(setTotalReps(bodyweight)).toBe(20);
     });

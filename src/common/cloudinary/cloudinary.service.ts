@@ -84,7 +84,12 @@ export class CloudinaryService {
   async uploadPrivateImage(
     file: Express.Multer.File,
     folder: string,
-  ): Promise<{ publicId: string; version: number; width?: number; height?: number }> {
+  ): Promise<{
+    publicId: string;
+    version: number;
+    width?: number;
+    height?: number;
+  }> {
     if (!file) {
       throw new BadRequestException('File is required');
     }
@@ -120,7 +125,9 @@ export class CloudinaryService {
               height: result.height,
             });
           } else {
-            reject(new BadRequestException('Upload failed: No result returned'));
+            reject(
+              new BadRequestException('Upload failed: No result returned'),
+            );
           }
         },
       );

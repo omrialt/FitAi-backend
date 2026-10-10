@@ -47,7 +47,18 @@ const parsedItemsSchema = z.object({
         label: z.string().min(1).max(120),
         quantity: z.number().positive().nullable(),
         unit: z
-          .enum(['g', 'kg', 'ml', 'l', 'oz', 'lb', 'cup', 'tbsp', 'tsp', 'unit'])
+          .enum([
+            'g',
+            'kg',
+            'ml',
+            'l',
+            'oz',
+            'lb',
+            'cup',
+            'tbsp',
+            'tsp',
+            'unit',
+          ])
           .nullable(),
       }),
     )
@@ -70,7 +81,8 @@ const PARSE_JSON_SCHEMA = {
           },
           label: {
             type: 'string',
-            description: "The food as the user wrote it, in their own language.",
+            description:
+              'The food as the user wrote it, in their own language.',
           },
           quantity: {
             type: ['number', 'null'],
@@ -78,7 +90,19 @@ const PARSE_JSON_SCHEMA = {
           },
           unit: {
             type: ['string', 'null'],
-            enum: ['g', 'kg', 'ml', 'l', 'oz', 'lb', 'cup', 'tbsp', 'tsp', 'unit', null],
+            enum: [
+              'g',
+              'kg',
+              'ml',
+              'l',
+              'oz',
+              'lb',
+              'cup',
+              'tbsp',
+              'tsp',
+              'unit',
+              null,
+            ],
           },
         },
         required: ['query', 'label', 'quantity', 'unit'],
@@ -108,7 +132,8 @@ const GRAMS_PER_UNIT: Record<string, number> = {
 /** When the user says "an apple" and means one of them. */
 const DEFAULT_UNIT_GRAMS = 100;
 
-export interface FoodSearchResult extends Omit<FoodItem, 'searchTerms' | 'cachedAt'> {
+export interface FoodSearchResult
+  extends Omit<FoodItem, 'searchTerms' | 'cachedAt'> {
   /** True when this row was answered without spending a USDA request. */
   fromCache: boolean;
 }

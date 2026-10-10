@@ -17,7 +17,10 @@ import { PlanGeneratorService } from './plan-generator.service';
 import { TrainingPlanService } from '../training-plan/training-plan.service';
 // Value imports: `import type` erases the class and the global ValidationPipe
 // then never sees a DTO to validate.
-import { CoachChatDto, GeneratePlanDto } from '../../interfaces/ai-coach.interfaces';
+import {
+  CoachChatDto,
+  GeneratePlanDto,
+} from '../../interfaces/ai-coach.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';

@@ -17,10 +17,6 @@ import type { User } from '../user/user.schema';
 import {
   LoginDto,
   RegisterDto,
-  RefreshTokenDto,
-  ChangePasswordDto,
-  ForgotPasswordDto,
-  ResetPasswordDto,
   UpdateProfileDto,
   CompleteProfileDto,
   AuthResponse,

@@ -213,9 +213,7 @@ describe('WorkoutStatsService', () => {
       session(daysAgo(2), [
         {
           name: 'Chest Press',
-          sets: [
-            { reps: 8, weight: 50, drops: [{ reps: 14, weight: 45 }] },
-          ],
+          sets: [{ reps: 8, weight: 50, drops: [{ reps: 14, weight: 45 }] }],
         },
       ]);
 

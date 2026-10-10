@@ -150,7 +150,9 @@ export class AnthropicService {
       response = await this.client.messages.create({
         model: DEFAULT_MODEL,
         max_tokens: options.maxTokens ?? 8000,
-        ...(options.thinking ? { thinking: { type: 'adaptive' as const } } : {}),
+        ...(options.thinking
+          ? { thinking: { type: 'adaptive' as const } }
+          : {}),
         output_config: {
           effort: options.effort ?? 'medium',
           format: { type: 'json_schema', schema: options.jsonSchema },
@@ -197,7 +199,9 @@ export class AnthropicService {
   }
 
   private fail(label: string, reason: AiFailure, detail?: string): null {
-    this.lastError = detail ? `${label}: ${reason} — ${detail}` : `${label}: ${reason}`;
+    this.lastError = detail
+      ? `${label}: ${reason} — ${detail}`
+      : `${label}: ${reason}`;
     this.logger.warn(`AI call failed — ${this.lastError}`);
     return null;
   }

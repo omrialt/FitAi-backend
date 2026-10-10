@@ -8,7 +8,11 @@ import {
 import { Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 
-import { AccountService, OWNED_BY_USER_ID } from './account.service';
+import {
+  AccountService,
+  OWNED_BY_PAIR,
+  OWNED_BY_USER_ID,
+} from './account.service';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { BodyPhotoService } from '../body-photo/body-photo.service';
 
@@ -47,14 +51,20 @@ describe('AccountService', () => {
   const makeModel = () => ({
     findById: jest.fn().mockReturnValue(chain({ _id: userId })),
     findByIdAndDelete: jest.fn().mockReturnValue(chain({ _id: userId })),
-    find: jest.fn().mockReturnValue(chain([])),
+    find: jest.fn().mockReturnValue({ ...chain([]), sort: () => chain([]) }),
     deleteMany: jest.fn().mockReturnValue(chain({ deletedCount: 2 })),
     updateMany: jest.fn().mockReturnValue(chain({ modifiedCount: 1 })),
   });
 
   beforeEach(async () => {
     models = {};
-    for (const name of [...OWNED, 'User', 'TrainerConnection']) {
+    for (const name of [
+      ...OWNED,
+      ...OWNED_BY_PAIR,
+      'User',
+      'TrainerConnection',
+      'TrainerAlertSettings',
+    ]) {
       models[name] = makeModel();
     }
     cloudinary = { deleteImage: jest.fn().mockResolvedValue(undefined) };
@@ -100,6 +110,34 @@ describe('AccountService', () => {
           { clientId: new Types.ObjectId(userId) },
         ],
       });
+    });
+
+    // Messages and notes name the user as trainerId or clientId too, and were
+    // missed by the cascade until rev. 17 of the gap analysis.
+    it('deletes conversations and trainer notes from both sides', async () => {
+      const report = await service.deleteAccount(userId);
+
+      for (const name of OWNED_BY_PAIR) {
+        expect(models[name].deleteMany).toHaveBeenCalledWith({
+          $or: [
+            { trainerId: new Types.ObjectId(userId) },
+            { clientId: new Types.ObjectId(userId) },
+          ],
+        });
+        expect(report.removed[name]).toBe(2);
+      }
+    });
+
+    it("deletes a trainer's alert settings", async () => {
+      await service.deleteAccount(userId);
+
+      expect(models.TrainerAlertSettings.deleteMany).toHaveBeenCalledWith({
+        trainerId: new Types.ObjectId(userId),
+      });
+    });
+
+    it('deletes goals with the rest of the health data', () => {
+      expect(OWNED).toContain('PhysicalTarget');
     });
 
     // The half that is usually forgotten: references other people hold.
@@ -198,9 +236,18 @@ describe('AccountService', () => {
         'workoutSessions',
         'aiRecommendations',
         'trainerConnections',
+        'physicalTargets',
+        'messages',
       ]) {
         expect(result).toHaveProperty(key);
       }
+    });
+
+    it('never exports the trainer notes written about the user', async () => {
+      const result = await service.exportUserData(userId);
+
+      expect(models.TrainerNote.find).not.toHaveBeenCalled();
+      expect(Object.keys(result).join(' ')).not.toMatch(/trainerNote/i);
     });
   });
 

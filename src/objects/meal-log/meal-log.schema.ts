@@ -33,12 +33,7 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
  * came through, and every screen that can already draw a food can draw these.
  */
 
-export const mealTypeSchema = z.enum([
-  'breakfast',
-  'lunch',
-  'dinner',
-  'snack',
-]);
+export const mealTypeSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
 
 /**
  * Where the numbers came from. Provenance, not behaviour — nothing branches on

@@ -104,7 +104,9 @@ export class PlanAssignmentService {
     });
 
     const saved = await template.save();
-    this.logger.debug(`Trainer ${ownerId} saved template ${getIdString(saved._id)}`);
+    this.logger.debug(
+      `Trainer ${ownerId} saved template ${getIdString(saved._id)}`,
+    );
     return saved.toObject();
   }
 

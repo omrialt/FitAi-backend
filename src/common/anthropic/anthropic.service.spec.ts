@@ -44,6 +44,11 @@ function message(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The `n`th argument of a mock's `call`th call, typed for assertions. */
+function argOf(mock: jest.Mock, call = 0, n = 0): Record<string, any> {
+  return (mock.mock.calls[call] as unknown[])[n] as Record<string, any>;
+}
+
 describe('AnthropicService', () => {
   const ORIGINAL_ENV = { ...process.env };
 
@@ -184,7 +189,7 @@ describe('AnthropicService', () => {
       stubClient(service, create);
 
       await call(service);
-      expect(create.mock.calls[0][0]).not.toHaveProperty('thinking');
+      expect(argOf(create)).not.toHaveProperty('thinking');
 
       await service.complete({
         label: 'test',
@@ -195,9 +200,9 @@ describe('AnthropicService', () => {
         thinking: true,
         effort: 'high',
       });
-      expect(create.mock.calls[1][0]).toMatchObject({
+      expect(argOf(create, 1, 0)).toMatchObject({
         thinking: { type: 'adaptive' },
-        output_config: expect.objectContaining({ effort: 'high' }),
+        output_config: expect.objectContaining({ effort: 'high' }) as unknown,
       });
     });
   });

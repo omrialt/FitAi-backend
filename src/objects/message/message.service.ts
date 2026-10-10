@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   BadRequestException,
@@ -11,6 +13,18 @@ import type { MessageDocument } from './message.schema';
 
 /** How many messages one thread request returns, newest kept. */
 const THREAD_LIMIT = 200;
+
+/**
+ * How much one person may send. Generous for a conversation — twenty in a
+ * minute is someone typing fast in short lines — and far below what a script
+ * stuck in a loop would do. The global limiter is 300 requests a minute per IP
+ * across every route, which would let one account fill a thread with
+ * thousands of messages an hour.
+ */
+export const SEND_LIMITS = [
+  { windowMs: 60 * 1000, max: 20 },
+  { windowMs: 60 * 60 * 1000, max: 200 },
+] as const;
 
 export interface ThreadPair {
   trainerId: string;
@@ -90,6 +104,7 @@ export class MessageService {
     body: string,
   ): Promise<MessageDocument> {
     const pair = await this.resolvePair(callerId, otherUserId);
+    await this.assertWithinSendLimits(callerId);
 
     const created = await this.messageModel.create({
       trainerId: new Types.ObjectId(pair.trainerId),
@@ -104,6 +119,37 @@ export class MessageService {
         `${pair.trainerId}/${pair.clientId}`,
     );
     return created;
+  }
+
+  /**
+   * Counted from the collection itself rather than an in-memory counter: a
+   * serverless function keeps no memory between invocations, and two of them
+   * running at once would each count only half. The `senderId, createdAt`
+   * index makes each count an index range scan.
+   *
+   * Checked after the pair is resolved, so a stranger is told "forbidden"
+   * rather than learning anything about anyone's rate.
+   */
+  private async assertWithinSendLimits(callerId: string): Promise<void> {
+    const senderId = new Types.ObjectId(callerId);
+    const now = Date.now();
+
+    for (const { windowMs, max } of SEND_LIMITS) {
+      const sent = await this.messageModel.countDocuments({
+        senderId,
+        createdAt: { $gte: new Date(now - windowMs) },
+      });
+      if (sent >= max) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            message: 'Too many messages — wait a moment and send again',
+            retryAfterSeconds: Math.ceil(windowMs / 1000),
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
   }
 
   /**

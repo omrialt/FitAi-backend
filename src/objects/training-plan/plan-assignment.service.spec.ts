@@ -76,16 +76,18 @@ describe('PlanAssignmentService', () => {
 
     // `new this.planModel(doc)` — a constructor that records what it was
     // handed and returns something `save()`able.
-    const model = jest.fn().mockImplementation((doc: Record<string, unknown>) => {
-      saved.push(doc);
-      return {
-        save: () =>
-          Promise.resolve({
-            _id: new Types.ObjectId(),
-            toObject: () => doc,
-          }),
-      };
-    }) as unknown as typeof planModel;
+    const model = jest
+      .fn()
+      .mockImplementation((doc: Record<string, unknown>) => {
+        saved.push(doc);
+        return {
+          save: () =>
+            Promise.resolve({
+              _id: new Types.ObjectId(),
+              toObject: () => doc,
+            }),
+        };
+      }) as unknown as typeof planModel;
 
     model.findById = jest.fn().mockReturnValue({
       exec: () => Promise.resolve(planDoc()),
@@ -168,12 +170,9 @@ describe('PlanAssignmentService', () => {
     it('assigns again when explicitly forced', async () => {
       planModel.find.mockReturnValue(findChain([{ userId: CLIENT_A }]));
 
-      const results = await service.assign(
-        TEMPLATE_ID,
-        TRAINER,
-        [CLIENT_A],
-        { force: true },
-      );
+      const results = await service.assign(TEMPLATE_ID, TRAINER, [CLIENT_A], {
+        force: true,
+      });
 
       expect(results[0].status).toBe('created');
     });
@@ -199,7 +198,10 @@ describe('PlanAssignmentService', () => {
           saved.push(doc);
           return {
             save: () =>
-              Promise.resolve({ _id: new Types.ObjectId(), toObject: () => doc }),
+              Promise.resolve({
+                _id: new Types.ObjectId(),
+                toObject: () => doc,
+              }),
           };
         });
       Object.assign(failing, {
@@ -327,7 +329,9 @@ describe('PlanAssignmentService', () => {
  */
 describe('TrainingPlanController route order', () => {
   it('declares the static routes before the :id route', () => {
-    const methods = Object.getOwnPropertyNames(TrainingPlanController.prototype);
+    const methods = Object.getOwnPropertyNames(
+      TrainingPlanController.prototype,
+    );
 
     expect(methods.indexOf('listLibrary')).toBeLessThan(
       methods.indexOf('findOne'),

@@ -82,7 +82,8 @@ const PLAN_JSON_SCHEMA = {
         properties: {
           name: {
             type: 'string',
-            description: 'What this day trains, e.g. "Push" or "פלג גוף עליון".',
+            description:
+              'What this day trains, e.g. "Push" or "פלג גוף עליון".',
           },
           exercises: {
             type: 'array',
@@ -182,7 +183,7 @@ export class PlanGeneratorService {
       maxTokens: 8000,
       effort: 'medium',
       system: this.systemPrompt(hebrew),
-      prompt: this.userPrompt(request, days, catalogue, hebrew),
+      prompt: this.userPrompt(request, days, catalogue),
     });
 
     if (!result) return { plan: null, droppedSlugs: [], tokensUsed: 0 };
@@ -208,7 +209,15 @@ export class PlanGeneratorService {
 
   private async availableExercises(
     equipment?: (typeof EQUIPMENT)[number][],
-  ): Promise<{ slug: string; nameEn: string; nameHe: string; primaryMuscle: string; equipment: string }[]> {
+  ): Promise<
+    {
+      slug: string;
+      nameEn: string;
+      nameHe: string;
+      primaryMuscle: string;
+      equipment: string;
+    }[]
+  > {
     if (!equipment || equipment.length === 0) {
       return (await this.exercises.search({ limit: 100 })) as never;
     }
@@ -246,8 +255,12 @@ export class PlanGeneratorService {
   private userPrompt(
     request: GeneratePlanRequest,
     days: number,
-    catalogue: { slug: string; nameEn: string; primaryMuscle: string; equipment: string }[],
-    hebrew: boolean,
+    catalogue: {
+      slug: string;
+      nameEn: string;
+      primaryMuscle: string;
+      equipment: string;
+    }[],
   ): string {
     const lines = [
       `Goal: ${request.goal}`,
@@ -288,7 +301,10 @@ export class PlanGeneratorService {
   private materialise(
     generated: GeneratedPlan,
     request: GeneratePlanRequest,
-    bySlug: Map<string, { slug: string; nameEn: string; nameHe: string; primaryMuscle: string }>,
+    bySlug: Map<
+      string,
+      { slug: string; nameEn: string; nameHe: string; primaryMuscle: string }
+    >,
     hebrew: boolean,
   ): { plan: Partial<TrainingPlan> | null; droppedSlugs: string[] } {
     const droppedSlugs: string[] = [];
@@ -315,7 +331,10 @@ export class PlanGeneratorService {
               })),
             };
           })
-          .filter((exercise): exercise is NonNullable<typeof exercise> => exercise !== null);
+          .filter(
+            (exercise): exercise is NonNullable<typeof exercise> =>
+              exercise !== null,
+          );
 
         return { name: day.name, exercises };
       })
@@ -326,7 +345,7 @@ export class PlanGeneratorService {
     const weekdays =
       request.weekdays?.length === days.length
         ? request.weekdays
-        : DEFAULT_WEEKDAYS[days.length] ?? days.map((_, i) => i % 7);
+        : (DEFAULT_WEEKDAYS[days.length] ?? days.map((_, i) => i % 7));
 
     return {
       plan: {

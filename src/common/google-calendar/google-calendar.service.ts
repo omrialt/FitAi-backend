@@ -287,8 +287,11 @@ export class GoogleCalendarService {
       };
     } catch (error) {
       // Detect expired / revoked refresh token
-      const errMsg =
-        (error as any)?.response?.data?.error || (error as any)?.message || '';
+      const failure = error as {
+        response?: { data?: { error?: unknown } };
+        message?: unknown;
+      } | null;
+      const errMsg = failure?.response?.data?.error || failure?.message || '';
       if (errMsg === 'invalid_grant') {
         throw new UnauthorizedException('invalid_grant');
       }

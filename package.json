@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "build:deploy": "nest build && if [ \"$VERCEL_ENV\" = production ]; then npm run seed:exercises; else echo 'seed:exercises skipped (not a production deploy)'; fi",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

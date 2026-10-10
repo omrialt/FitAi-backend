@@ -58,7 +58,8 @@ const ANSWER_JSON_SCHEMA = {
   properties: {
     answer: {
       type: 'string',
-      description: "The reply, in the user's language. Two short paragraphs at most.",
+      description:
+        "The reply, in the user's language. Two short paragraphs at most.",
     },
     grounded_in: {
       type: 'array',
@@ -86,8 +87,17 @@ export interface CoachContext {
   streakWeeks: number;
   totalWorkoutDays: number;
   adherencePercent: number | null;
-  personalBests: { exercise: string; weight: number; reps: number; estimatedOneRepMax: number }[];
-  fatigue: { level: string; reasons: string[]; volumeChangePercent: number | null };
+  personalBests: {
+    exercise: string;
+    weight: number;
+    reps: number;
+    estimatedOneRepMax: number;
+  }[];
+  fatigue: {
+    level: string;
+    reasons: string[];
+    volumeChangePercent: number | null;
+  };
   nextSession: {
     exercise: string;
     action: string;
@@ -167,7 +177,9 @@ export class CoachChatService {
     const recent = history.slice(-MAX_TURNS);
 
     const transcript = recent
-      .map((turn) => `${turn.role === 'user' ? 'User' : 'Coach'}: ${turn.content}`)
+      .map(
+        (turn) => `${turn.role === 'user' ? 'User' : 'Coach'}: ${turn.content}`,
+      )
       .join('\n');
 
     const result = await this.anthropic.complete({
@@ -199,7 +211,9 @@ export class CoachChatService {
         "The trainee's numbers:",
         JSON.stringify(context, null, 2),
         '',
-        ...(transcript ? ['Earlier in this conversation:', transcript, ''] : []),
+        ...(transcript
+          ? ['Earlier in this conversation:', transcript, '']
+          : []),
         'Their question:',
         question,
       ].join('\n'),
