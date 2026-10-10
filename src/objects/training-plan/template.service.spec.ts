@@ -300,7 +300,9 @@ describe('TemplateService', () => {
     it('reads each distinct exercise from the catalogue only once', async () => {
       await service.build({ templateId: 'ppl', userId: USER });
 
-      const asked = exercises.findBySlug.mock.calls.map(([slug]) => slug);
+      const asked = (exercises.findBySlug.mock.calls as [string][]).map(
+        ([slug]) => slug,
+      );
       // PPL names lateral raises and triceps pushdowns on more than one day.
       expect(asked.length).toBe(new Set(asked).size);
     });

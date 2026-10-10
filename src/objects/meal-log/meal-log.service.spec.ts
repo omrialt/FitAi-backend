@@ -63,6 +63,11 @@ const plan = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The `n`th argument of a mock's `call`th call, typed for assertions. */
+function argOf(mock: jest.Mock, call = 0, n = 0): Record<string, any> {
+  return (mock.mock.calls[call] as unknown[])[n] as Record<string, any>;
+}
+
 describe('MealLogService', () => {
   let service: MealLogService;
   let mealLogModel: Record<string, jest.Mock>;
@@ -101,7 +106,9 @@ describe('MealLogService', () => {
     mealLogModel.find.mockReturnValue(chain(rows));
 
   const withActivePlan = (p: unknown) => {
-    currentStatusModel.findOne.mockReturnValue(chain({ activeMenuId: PLAN_ID }));
+    currentStatusModel.findOne.mockReturnValue(
+      chain({ activeMenuId: PLAN_ID }),
+    );
     nutritionPlanModel.findById.mockReturnValue(chain(p));
   };
 
@@ -118,15 +125,17 @@ describe('MealLogService', () => {
 
       await service.getDay(USER, DAY);
 
-      expect(mealLogModel.find.mock.calls[0][0]).toMatchObject({
+      expect(argOf(mealLogModel.find)).toMatchObject({
         localDay: DAY,
       });
     });
 
     it('stores the client day verbatim on create', async () => {
-      mealLogModel.create.mockImplementation((doc: Record<string, unknown>) => ({
-        toObject: () => ({ ...logRow(), ...doc }),
-      }));
+      mealLogModel.create.mockImplementation(
+        (doc: Record<string, unknown>) => ({
+          toObject: () => ({ ...logRow(), ...doc }),
+        }),
+      );
 
       await service.create(USER, {
         localDay: '2026-12-31',
@@ -134,7 +143,7 @@ describe('MealLogService', () => {
         foods: [food()],
       });
 
-      expect(mealLogModel.create.mock.calls[0][0].localDay).toBe('2026-12-31');
+      expect(argOf(mealLogModel.create).localDay).toBe('2026-12-31');
     });
   });
 
@@ -227,7 +236,9 @@ describe('MealLogService', () => {
     });
 
     it('survives an active menu whose plan has been deleted', async () => {
-      currentStatusModel.findOne.mockReturnValue(chain({ activeMenuId: PLAN_ID }));
+      currentStatusModel.findOne.mockReturnValue(
+        chain({ activeMenuId: PLAN_ID }),
+      );
       nutritionPlanModel.findById.mockReturnValue(chain(null));
       withMeals([]);
 
@@ -243,8 +254,13 @@ describe('MealLogService', () => {
   describe('consumed and remaining', () => {
     it('sums every meal in the day', async () => {
       withMeals([
-        logRow({ foods: [food({ calories: 500, protein: 40, carbs: 30, fat: 15 })] }),
-        logRow({ _id: new Types.ObjectId(), foods: [food({ calories: 300, protein: 20, carbs: 40, fat: 5 })] }),
+        logRow({
+          foods: [food({ calories: 500, protein: 40, carbs: 30, fat: 15 })],
+        }),
+        logRow({
+          _id: new Types.ObjectId(),
+          foods: [food({ calories: 300, protein: 20, carbs: 40, fat: 5 })],
+        }),
       ]);
       withActivePlan(plan());
 
@@ -271,7 +287,9 @@ describe('MealLogService', () => {
      */
     it('goes negative when the target is exceeded', async () => {
       withMeals([
-        logRow({ foods: [food({ calories: 2300, protein: 170, carbs: 210, fat: 70 })] }),
+        logRow({
+          foods: [food({ calories: 2300, protein: 170, carbs: 210, fat: 70 })],
+        }),
       ]);
       withActivePlan(plan());
 
@@ -309,7 +327,12 @@ describe('MealLogService', () => {
       const day = await service.getDay('not-an-id', DAY);
 
       expect(day.meals).toEqual([]);
-      expect(day.consumed).toEqual({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+      expect(day.consumed).toEqual({
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      });
       expect(mealLogModel.find).not.toHaveBeenCalled();
     });
   });
@@ -320,9 +343,9 @@ describe('MealLogService', () => {
     it('scopes the delete to the owner', async () => {
       await service.remove(LOG_ID.toHexString(), USER);
 
-      expect(mealLogModel.deleteOne.mock.calls[0][0]).toMatchObject({
-        userId: expect.anything(),
-        _id: expect.anything(),
+      expect(argOf(mealLogModel.deleteOne)).toMatchObject({
+        userId: expect.anything() as unknown,
+        _id: expect.anything() as unknown,
       });
     });
 
@@ -330,9 +353,9 @@ describe('MealLogService', () => {
     it('reports not-found rather than forbidden for another user’s entry', async () => {
       mealLogModel.deleteOne.mockReturnValue(chain({ deletedCount: 0 }));
 
-      await expect(
-        service.remove(LOG_ID.toHexString(), USER),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.remove(LOG_ID.toHexString(), USER)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('rejects a malformed id without touching the database', async () => {

@@ -37,6 +37,11 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** The `n`th argument of a mock's `call`th call, typed for assertions. */
+function argOf(mock: jest.Mock, call = 0, n = 0): Record<string, any> {
+  return (mock.mock.calls[call] as unknown[])[n] as Record<string, any>;
+}
+
 describe('BodyPhotoService', () => {
   let service: BodyPhotoService;
   let photoModel: Record<string, jest.Mock>;
@@ -84,13 +89,15 @@ describe('BodyPhotoService', () => {
 
   describe('who can see a photo', () => {
     it('shows the owner everything, shared or not', async () => {
-      photoModel.find.mockReturnValue(chain([row(), row({ visibility: 'trainer' })]));
+      photoModel.find.mockReturnValue(
+        chain([row(), row({ visibility: 'trainer' })]),
+      );
 
       const photos = await service.list(CLIENT, CLIENT);
 
       expect(photos).toHaveLength(2);
       // No visibility filter for the owner's own timeline.
-      expect(photoModel.find.mock.calls[0][0]).not.toHaveProperty('visibility');
+      expect(argOf(photoModel.find)).not.toHaveProperty('visibility');
     });
 
     /**
@@ -108,7 +115,7 @@ describe('BodyPhotoService', () => {
 
       // Filtered in the query, not after it: a private photo is never loaded
       // into an object somebody could later forget to strip.
-      expect(photoModel.find.mock.calls[0][0]).toMatchObject({
+      expect(argOf(photoModel.find)).toMatchObject({
         visibility: 'trainer',
       });
     });
@@ -147,14 +154,14 @@ describe('BodyPhotoService', () => {
 
       const created = await service.create(CLIENT, file, smuggled);
 
-      expect(photoModel.create.mock.calls[0][0].visibility).toBe('private');
+      expect(argOf(photoModel.create).visibility).toBe('private');
       expect(created.visibility).toBe('private');
     });
 
     it('uploads to the private folder, not the public one', async () => {
       await service.create(CLIENT, file, {});
 
-      const [, folder] = cloudinary.uploadPrivateImage.mock.calls[0];
+      const folder = argOf(cloudinary.uploadPrivateImage, 0, 1) as unknown;
       expect(folder).toBe('fitai/body-photos');
       expect(folder).not.toBe('fitai/uploads');
     });
@@ -167,7 +174,7 @@ describe('BodyPhotoService', () => {
     it('stores an identifier, never a URL', async () => {
       await service.create(CLIENT, file, {});
 
-      const doc = photoModel.create.mock.calls[0][0];
+      const doc = argOf(photoModel.create);
       expect(doc.publicId).toBe('fitai/body-photos/abc');
       expect(JSON.stringify(doc)).not.toContain('http');
     });
@@ -212,8 +219,8 @@ describe('BodyPhotoService', () => {
         service.setVisibility(PHOTO_ID.toHexString(), STRANGER, 'trainer'),
       ).rejects.toThrow(NotFoundException);
 
-      expect(photoModel.findOneAndUpdate.mock.calls[0][0]).toMatchObject({
-        userId: expect.anything(),
+      expect(argOf(photoModel.findOneAndUpdate)).toMatchObject({
+        userId: expect.anything() as unknown,
       });
     });
 
@@ -236,8 +243,9 @@ describe('BodyPhotoService', () => {
     it('deletes the image before the row', async () => {
       photoModel.findOne.mockReturnValue(chain(row()));
       const order: string[] = [];
-      cloudinary.deleteImage.mockImplementation(async () => {
+      cloudinary.deleteImage.mockImplementation(() => {
         order.push('cloudinary');
+        return Promise.resolve();
       });
       photoModel.deleteOne.mockImplementation(() => {
         order.push('mongo');
@@ -284,11 +292,9 @@ describe('BodyPhotoService', () => {
 
       const removed = await service.removeAllForUser(CLIENT);
 
-      expect(cloudinary.deleteImage.mock.calls.map(([id]) => id)).toEqual([
-        'a',
-        'b',
-        'c',
-      ]);
+      expect(
+        (cloudinary.deleteImage.mock.calls as [string][]).map(([id]) => id),
+      ).toEqual(['a', 'b', 'c']);
       expect(removed).toBe(3);
     });
 

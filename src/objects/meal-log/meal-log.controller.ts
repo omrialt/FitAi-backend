@@ -62,10 +62,7 @@ export class MealLogController {
   @Get('user/:userId/day')
   @Roles('trainer', 'admin')
   @OwnsUserParam()
-  getForClient(
-    @Param('userId') userId: string,
-    @Query() query: DayQueryDto,
-  ) {
+  getForClient(@Param('userId') userId: string, @Query() query: DayQueryDto) {
     const day = query.day ?? new Date().toISOString().slice(0, 10);
     return this.mealLogs.getDay(userId, day);
   }

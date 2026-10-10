@@ -248,7 +248,9 @@ describe('ProgressionService', () => {
 
     // One session is a data point, not a pattern.
     it('says nothing about an exercise logged only once', async () => {
-      withSessions([session(daysAgo(2), 'Bench Press', [{ reps: 8, weight: 80 }])]);
+      withSessions([
+        session(daysAgo(2), 'Bench Press', [{ reps: 8, weight: 80 }]),
+      ]);
 
       const { suggestions } = await service.getOverloadPlan(USER);
       expect(suggestions).toHaveLength(0);
@@ -385,7 +387,10 @@ describe('ProgressionService', () => {
       const prescription = await service.getDeloadPrescription(USER);
 
       expect(prescription.recommended).toBe(false);
-      expect(prescription).toMatchObject({ loadPercent: 90, volumePercent: 80 });
+      expect(prescription).toMatchObject({
+        loadPercent: 90,
+        volumePercent: 80,
+      });
       expect(prescription.exercises[0].to).toEqual({
         weight: 90,
         sets: 2,
@@ -399,10 +404,10 @@ describe('ProgressionService', () => {
      * rounding to nearest could hand back load the week exists to remove.
      */
     it('rounds down to a weight a barbell can actually make', async () => {
-      stats.getFatigueSignal.mockResolvedValue(fatigue('deload', ['load_stalled']));
-      withSessions([
-        session(daysAgo(3), 'Curl', [{ reps: 10, weight: 86 }]),
-      ]);
+      stats.getFatigueSignal.mockResolvedValue(
+        fatigue('deload', ['load_stalled']),
+      );
+      withSessions([session(daysAgo(3), 'Curl', [{ reps: 10, weight: 86 }])]);
 
       const prescription = await service.getDeloadPrescription(USER);
       // 86 x 0.8 = 68.8 -> 67.5, not 70.
@@ -412,7 +417,9 @@ describe('ProgressionService', () => {
     // A deload is a lighter week, not a week off; dropping a lift to zero sets
     // loses the movement pattern entirely.
     it('never prescribes fewer than one set', async () => {
-      stats.getFatigueSignal.mockResolvedValue(fatigue('deload', ['load_stalled']));
+      stats.getFatigueSignal.mockResolvedValue(
+        fatigue('deload', ['load_stalled']),
+      );
       withSessions([session(daysAgo(3), 'Curl', [{ reps: 10, weight: 20 }])]);
 
       const prescription = await service.getDeloadPrescription(USER);

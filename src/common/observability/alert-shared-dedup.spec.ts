@@ -17,7 +17,11 @@ import { NodemailerService } from '../nodemailer/nodemailer.service';
  */
 
 /** A `SET key value NX EX n` good enough to be raced against. */
-function fakeUpstash(): Promise<{ server: Server; url: string; keys: Set<string> }> {
+function fakeUpstash(): Promise<{
+  server: Server;
+  url: string;
+  keys: Set<string>;
+}> {
   const keys = new Set<string>();
 
   const server = createServer((req, res) => {

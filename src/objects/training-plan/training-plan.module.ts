@@ -1,4 +1,9 @@
-import { Module, NestModule, MiddlewareConsumer, forwardRef } from '@nestjs/common';
+import {
+  Module,
+  NestModule,
+  MiddlewareConsumer,
+  forwardRef,
+} from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TrainingPlanSchema } from './training-plan.schema';
 import { UserSchema } from '../user/user.schema';

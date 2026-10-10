@@ -42,6 +42,11 @@ function chain(result: unknown) {
   return link;
 }
 
+/** The `n`th argument of a mock's `call`th call, typed for assertions. */
+function argOf(mock: jest.Mock, call = 0, n = 0): Record<string, any> {
+  return (mock.mock.calls[call] as unknown[])[n] as Record<string, any>;
+}
+
 describe('FoodService', () => {
   let service: FoodService;
   let foodModel: { find: jest.Mock; bulkWrite: jest.Mock };
@@ -113,7 +118,9 @@ describe('FoodService', () => {
 
       await service.search('עוף');
 
-      const [operations] = foodModel.bulkWrite.mock.calls[0];
+      const operations = argOf(foodModel.bulkWrite) as unknown as {
+        updateOne: unknown;
+      }[];
       expect(operations[0].updateOne).toMatchObject({
         filter: { fdcId: 171077 },
         upsert: true,
@@ -169,11 +176,13 @@ describe('FoodService', () => {
      */
     it('never asks the model for a macro', async () => {
       cached([CHICKEN]);
-      parsedAs([{ query: 'chicken breast', label: 'חזה עוף', quantity: 150, unit: 'g' }]);
+      parsedAs([
+        { query: 'chicken breast', label: 'חזה עוף', quantity: 150, unit: 'g' },
+      ]);
 
       await service.parse('אכלתי 150 גרם חזה עוף');
 
-      const [options] = anthropic.complete.mock.calls[0];
+      const options = argOf(anthropic.complete);
       const schema = JSON.stringify(options.jsonSchema);
 
       for (const macro of ['calorie', 'protein', 'carb', 'fat']) {
@@ -184,7 +193,9 @@ describe('FoodService', () => {
 
     it('prices a stated amount from the database', async () => {
       cached([CHICKEN]);
-      parsedAs([{ query: 'chicken breast', label: 'חזה עוף', quantity: 150, unit: 'g' }]);
+      parsedAs([
+        { query: 'chicken breast', label: 'חזה עוף', quantity: 150, unit: 'g' },
+      ]);
 
       const { items } = await service.parse('אכלתי 150 גרם חזה עוף');
 
@@ -210,7 +221,14 @@ describe('FoodService', () => {
     it('returns no numbers at all for a food it cannot find', async () => {
       cached([]);
       usda.search.mockResolvedValue([]);
-      parsedAs([{ query: 'grandmother soup', label: 'המרק של סבתא', quantity: 1, unit: 'cup' }]);
+      parsedAs([
+        {
+          query: 'grandmother soup',
+          label: 'המרק של סבתא',
+          quantity: 1,
+          unit: 'cup',
+        },
+      ]);
 
       const { items } = await service.parse('אכלתי את המרק של סבתא');
 

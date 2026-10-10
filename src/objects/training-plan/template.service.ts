@@ -155,8 +155,7 @@ export class TemplateService {
 
     return {
       userId: options.userId,
-      title:
-        options.title ?? (hebrew ? template.nameHe : template.nameEn),
+      title: options.title ?? (hebrew ? template.nameHe : template.nameEn),
       description: hebrew ? template.descriptionHe : template.descriptionEn,
       days,
       difficulty: template.difficulty,

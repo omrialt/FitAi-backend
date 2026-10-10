@@ -63,10 +63,7 @@ export class BodyPhotoController {
    */
   @Get('user/:userId')
   @Roles('trainer', 'admin')
-  listForClient(
-    @Param('userId') userId: string,
-    @Request() req: AuthRequest,
-  ) {
+  listForClient(@Param('userId') userId: string, @Request() req: AuthRequest) {
     return this.photos.list(userId, req.user.id);
   }
 

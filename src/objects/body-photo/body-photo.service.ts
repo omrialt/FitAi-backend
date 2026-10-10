@@ -75,7 +75,10 @@ export class BodyPhotoService {
 
     const own = userId === viewerId;
 
-    if (!own && !(await this.trainerAccess.isAcceptedTrainerOf(viewerId, userId))) {
+    if (
+      !own &&
+      !(await this.trainerAccess.isAcceptedTrainerOf(viewerId, userId))
+    ) {
       throw new ForbiddenException('You do not have access to these photos');
     }
 
@@ -141,7 +144,10 @@ export class BodyPhotoService {
 
     const updated = await this.photoModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(photoId), userId: new Types.ObjectId(userId) },
+        {
+          _id: new Types.ObjectId(photoId),
+          userId: new Types.ObjectId(userId),
+        },
         { $set: { visibility } },
         { new: true },
       )

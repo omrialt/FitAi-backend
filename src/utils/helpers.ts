@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import bcrypt from 'bcrypt';
 import { ObjectId } from 'mongodb';
 
@@ -8,7 +8,7 @@ export function getIdString(Id: unknown): string {
   throw new Error('Invalid userId format');
 }
 
-export const generateUUID = (): string => uuidv4();
+export const generateUUID = (): string => randomUUID();
 
 export const hashPassword = async (password: string): Promise<string> => {
   const saltRounds = 10;

@@ -71,7 +71,7 @@ export class SubstituteExercisesDto {
  */
 export class ResolveExerciseNamesDto {
   @Transform(({ value }: { value: unknown }) =>
-    Array.isArray(value) ? value : [value],
+    Array.isArray(value) ? (value as unknown[]) : [value],
   )
   @IsArray()
   @ArrayMinSize(1)

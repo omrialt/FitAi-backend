@@ -171,21 +171,21 @@ export class TrainerDashboardService {
       planRows,
       settings,
     ] = await Promise.all([
-        this.userModel
-          .find({ _id: { $in: objectIds } })
-          .select('fullName email avatarUrl')
-          .lean<UserRow[]>()
-          .exec(),
-        this.aggregateSessions(objectIds, now),
-        this.aggregateWeightWindow(objectIds, now),
-        this.aggregateWeightTotals(objectIds),
-        this.trainingPlanModel
-          .find({ userId: { $in: objectIds }, isActive: true })
-          .select('userId days.dayOfWeek')
-          .lean<PlanRow[]>()
-          .exec(),
-        this.getSettings(trainerId),
-      ]);
+      this.userModel
+        .find({ _id: { $in: objectIds } })
+        .select('fullName email avatarUrl')
+        .lean<UserRow[]>()
+        .exec(),
+      this.aggregateSessions(objectIds, now),
+      this.aggregateWeightWindow(objectIds, now),
+      this.aggregateWeightTotals(objectIds),
+      this.trainingPlanModel
+        .find({ userId: { $in: objectIds }, isActive: true })
+        .select('userId days.dayOfWeek')
+        .lean<PlanRow[]>()
+        .exec(),
+      this.getSettings(trainerId),
+    ]);
 
     const sessionsBy = this.byId(sessionRows);
     const weightWindowBy = this.byId(weightWindowRows);

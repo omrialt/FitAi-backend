@@ -2,7 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 
-import type { LoggedFood, MealLog, MealType, MealSource } from './meal-log.schema';
+import type {
+  LoggedFood,
+  MealLog,
+  MealType,
+  MealSource,
+} from './meal-log.schema';
 
 /**
  * Daily nutrition: what was eaten, what was targeted, what is left.
@@ -141,10 +146,9 @@ export class MealLogService {
     ]);
 
     const meals = rows.map((row) => this.toView(row));
-    const consumed = meals.reduce(
-      (acc, meal) => this.add(acc, meal.totals),
-      { ...ZERO },
-    );
+    const consumed = meals.reduce((acc, meal) => this.add(acc, meal.totals), {
+      ...ZERO,
+    });
 
     if (!plan) {
       return {
@@ -273,7 +277,9 @@ export class MealLogService {
     // The field is sometimes populated and sometimes a bare id, depending on
     // the caller — the dashboard hook handles both for the same reason.
     const planId =
-      typeof ref === 'object' && '_id' in ref ? ref._id : (ref as Types.ObjectId);
+      typeof ref === 'object' && '_id' in ref
+        ? ref._id
+        : (ref as Types.ObjectId);
     if (!planId || !isValidObjectId(planId)) return null;
 
     return this.nutritionPlanModel

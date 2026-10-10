@@ -467,8 +467,8 @@ describe('TrainerDashboardService', () => {
         strict,
       );
 
-      const [filter, update, options] = alertSettingsModel.findOneAndUpdate
-        .mock.calls[0] as [
+      const [filter, update, options] = alertSettingsModel.findOneAndUpdate.mock
+        .calls[0] as [
         { trainerId: Types.ObjectId },
         { $set: unknown },
         { upsert: boolean },
