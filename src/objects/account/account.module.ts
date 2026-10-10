@@ -18,6 +18,10 @@ import { AccountService } from './account.service';
 import { AccountController } from './account.controller';
 import { BodyPhotoModule } from '../body-photo/body-photo.module';
 import { MealLogSchema } from '../meal-log/meal-log.schema';
+import { PhysicalTargetSchema } from '../physical-target/physical-target.schema';
+import { MessageSchema } from '../message/message.schema';
+import { TrainerNoteSchema } from '../trainer-note/trainer-note.schema';
+import { TrainerAlertSettingsSchema } from '../trainer-dashboard/trainer-alert-settings.schema';
 
 /**
  * Registers every collection that stores something about a user.
@@ -45,6 +49,10 @@ import { MealLogSchema } from '../meal-log/meal-log.schema';
       { name: 'TokenBlacklist', schema: TokenBlacklistSchema },
       { name: 'RefreshTokenFamily', schema: RefreshTokenFamilySchema },
       { name: 'AuthCode', schema: AuthCodeSchema },
+      { name: 'PhysicalTarget', schema: PhysicalTargetSchema },
+      { name: 'Message', schema: MessageSchema },
+      { name: 'TrainerNote', schema: TrainerNoteSchema },
+      { name: 'TrainerAlertSettings', schema: TrainerAlertSettingsSchema },
     ]),
     CloudinaryModule,
   ],

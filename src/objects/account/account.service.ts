@@ -32,6 +32,9 @@ export const OWNED_BY_USER_ID = [
   // in the ordinary cascade rather than needing its own deletion pass.
   'MealLog',
   'PhysicalData',
+  // Goals carry a starting snapshot of weight and measurements, so they are
+  // health data like the readings they were taken from.
+  'PhysicalTarget',
   'ProgressStats',
   'CurrentStatus',
   'WorkoutSession',
@@ -42,6 +45,18 @@ export const OWNED_BY_USER_ID = [
 ] as const;
 
 type OwnedModelName = (typeof OWNED_BY_USER_ID)[number];
+
+/**
+ * Collections that belong to a trainer–client pair rather than to one user.
+ * They name the user as `trainerId` or `clientId`, never `userId`, which is
+ * exactly how they slipped past the loop over OWNED_BY_USER_ID once already.
+ *
+ * Deleted whichever side is leaving. A conversation with someone who no
+ * longer has an account cannot continue, and a trainer's private note about a
+ * person is about that person — it goes when they go, and it goes when the
+ * trainer who wrote it goes.
+ */
+export const OWNED_BY_PAIR = ['Message', 'TrainerNote'] as const;
 
 export interface DeletionReport {
   /** Documents removed, per collection. */
@@ -91,6 +106,13 @@ export class AccountService {
     @InjectModel('RefreshTokenFamily')
     private readonly refreshTokenFamilyModel: Model<AnyDoc>,
     @InjectModel('AuthCode') private readonly authCodeModel: Model<AnyDoc>,
+    @InjectModel('PhysicalTarget')
+    private readonly physicalTargetModel: Model<AnyDoc>,
+    @InjectModel('Message') private readonly messageModel: Model<AnyDoc>,
+    @InjectModel('TrainerNote')
+    private readonly trainerNoteModel: Model<AnyDoc>,
+    @InjectModel('TrainerAlertSettings')
+    private readonly trainerAlertSettingsModel: Model<AnyDoc>,
     // Body photos are not in OWNED_BY_USER_ID because deleting the rows is
     // only half the job — the images live in Cloudinary, and a row deleted
     // without its asset is an erasure that did not happen.
@@ -104,6 +126,7 @@ export class AccountService {
       NutritionPlan: this.nutritionPlanModel,
       MealLog: this.mealLogModel,
       PhysicalData: this.physicalDataModel,
+      PhysicalTarget: this.physicalTargetModel,
       ProgressStats: this.progressStatsModel,
       CurrentStatus: this.currentStatusModel,
       WorkoutSession: this.workoutSessionModel,
@@ -148,6 +171,8 @@ export class AccountService {
       trainerConnections,
       bodyPhotos,
       mealLogs,
+      physicalTargets,
+      messages,
     ] = await Promise.all([
       this.trainingPlanModel.find({ userId: objectId }).lean().exec(),
       this.nutritionPlanModel.find({ userId: objectId }).lean().exec(),
@@ -169,6 +194,16 @@ export class AccountService {
       // A food diary is health data the same way the training log is, so it
       // belongs in the export for the same reason.
       this.mealLogModel.find({ userId: objectId }).lean().exec(),
+      this.physicalTargetModel.find({ userId: objectId }).lean().exec(),
+      // Both sides of every conversation the user was part of — a thread with
+      // only one person's lines in it is not a record of anything. Trainer
+      // notes are deliberately absent: a coach's private note about a client
+      // is the coach's, and no route has ever shown it to the client.
+      this.messageModel
+        .find({ $or: [{ trainerId: objectId }, { clientId: objectId }] })
+        .sort({ createdAt: 1 })
+        .lean()
+        .exec(),
     ]);
 
     return {
@@ -186,6 +221,8 @@ export class AccountService {
       trainerConnections,
       bodyPhotos,
       mealLogs,
+      physicalTargets,
+      messages,
     };
   }
 
@@ -235,6 +272,24 @@ export class AccountService {
       .deleteMany({ $or: [{ trainerId: objectId }, { clientId: objectId }] })
       .exec();
     removed.TrainerConnection = connections.deletedCount ?? 0;
+
+    for (const [name, model] of [
+      ['Message', this.messageModel],
+      ['TrainerNote', this.trainerNoteModel],
+    ] as const satisfies readonly (readonly [
+      (typeof OWNED_BY_PAIR)[number],
+      Model<AnyDoc>,
+    ])[]) {
+      const result = await model
+        .deleteMany({ $or: [{ trainerId: objectId }, { clientId: objectId }] })
+        .exec();
+      removed[name] = result.deletedCount ?? 0;
+    }
+
+    const alertSettings = await this.trainerAlertSettingsModel
+      .deleteMany({ trainerId: objectId })
+      .exec();
+    removed.TrainerAlertSettings = alertSettings.deletedCount ?? 0;
 
     // References held by other people's documents.
     for (const [label, model] of [
