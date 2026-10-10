@@ -144,8 +144,17 @@ export class PhysicalTargetService {
         await this.assertCanModify(id, requester);
       }
 
+      // A goal that is closed remembers when, so the card can say "achieved
+      // on 3 Oct" instead of only "achieved"; reopening it forgets that.
+      const update: Record<string, unknown> = { ...data };
+      if (data.status === 'active') {
+        update.$unset = { closedAt: 1 };
+      } else if (data.status !== undefined) {
+        update.closedAt = new Date();
+      }
+
       const physicalTarget = await this.physicalTargetModel
-        .findByIdAndUpdate(id, data, { new: true, runValidators: true })
+        .findByIdAndUpdate(id, update, { new: true, runValidators: true })
         .exec();
       if (!physicalTarget) {
         throw new NotFoundException(`Physical target with ID ${id} not found`);
@@ -177,9 +186,16 @@ export class PhysicalTargetService {
     }
   }
 
+  /**
+   * Progress of every target, closed ones included.
+   *
+   * It used to be active targets only — harmless while nothing could close a
+   * target. Once one can, an achieved goal would lose its bars the moment it
+   * was marked achieved, which is the opposite of what the user wants to see.
+   */
   async getProgress(userId: string): Promise<TargetProgress[]> {
     const [targets, latest] = await Promise.all([
-      this.findByUserId(userId, 'active'),
+      this.findByUserId(userId),
       this.physicalDataService.findLatestByUserId(userId),
     ]);
 
@@ -228,7 +244,7 @@ export class PhysicalTargetService {
 }
 
 /** Percent of the distance from `start` to `target` that `current` has covered, clamped to [0, 100]. */
-function computePercentComplete(
+export function computePercentComplete(
   start: number | null,
   current: number | null,
   target: number,

@@ -38,6 +38,7 @@ export const physicalTargetSchema = z.object({
   startValues: targetValuesSchema.optional(),
   startDate: z.date().default(() => new Date()),
   status: z.enum(physicalTargetStatusValues).default('active'),
+  closedAt: z.date().optional(),
   notes: z.string().trim().max(500).optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
@@ -77,6 +78,8 @@ export const PhysicalTargetSchema = new Schema(
       enum: physicalTargetStatusValues,
       default: 'active',
     },
+    // When the target was marked achieved or abandoned; absent while active.
+    closedAt: { type: Date },
     notes: { type: String, trim: true, maxlength: 500 },
   },
   {
