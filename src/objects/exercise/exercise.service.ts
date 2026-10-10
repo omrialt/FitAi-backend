@@ -125,6 +125,49 @@ export class ExerciseService {
   }
 
   /**
+   * `resolveByName` for a list of names, in one query.
+   *
+   * The session screen needs it to recognise an exercise that was renamed
+   * between two sessions — "Bench Press" in the plan, "לחיצת חזה" in last
+   * week's log — which is the same exercise only if both strings land on the
+   * same catalogue row. Same strictness as the single version: exact names
+   * and exact aliases, case-insensitive, nothing fuzzy.
+   *
+   * Every name asked about comes back as a key, `null` when unrecognised, so
+   * the caller never has to tell "not found" from "not asked".
+   */
+  async resolveNames(names: string[]): Promise<Record<string, string | null>> {
+    const result: Record<string, string | null> = {};
+    const terms = [...new Set(names.map((n) => n?.trim()).filter(Boolean))];
+    for (const name of names) result[name] = null;
+    if (terms.length === 0) return result;
+
+    const patterns = terms.map((t) => new RegExp(`^${escapeRegex(t)}$`, 'i'));
+    const rows = await this.exerciseModel
+      .find({
+        $or: [
+          { nameHe: { $in: patterns } },
+          { nameEn: { $in: patterns } },
+          { aliases: { $in: patterns } },
+        ],
+      })
+      .select('slug nameHe nameEn aliases')
+      .lean<Pick<Exercise, 'slug' | 'nameHe' | 'nameEn' | 'aliases'>[]>()
+      .exec();
+
+    const bySpelling = new Map<string, string>();
+    for (const row of rows) {
+      for (const spelling of [row.nameHe, row.nameEn, ...(row.aliases ?? [])]) {
+        if (spelling) bySpelling.set(spelling.toLowerCase(), row.slug);
+      }
+    }
+    for (const name of names) {
+      result[name] = bySpelling.get(name?.trim().toLowerCase()) ?? null;
+    }
+    return result;
+  }
+
+  /**
    * Substitutes for a free-text exercise name, in one call.
    *
    * The session screen has a name and needs alternatives; making it resolve

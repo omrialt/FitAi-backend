@@ -1,5 +1,8 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
   IsOptional,
@@ -57,6 +60,25 @@ export class SubstituteExercisesDto {
   @Min(1)
   @Max(20)
   limit?: number;
+}
+
+/**
+ * Several plan/session names at once — `?names=a&names=b`.
+ *
+ * A single `names=a` arrives as a string rather than an array, hence the
+ * transform. Capped so the query stays one bounded round trip: a training day
+ * with forty exercises is not a training day.
+ */
+export class ResolveExerciseNamesDto {
+  @Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value) ? value : [value],
+  )
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  names!: string[];
 }
 
 export class ExerciseAlternativesDto {

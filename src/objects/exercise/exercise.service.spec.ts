@@ -10,6 +10,7 @@ function chain(result: unknown) {
   const link = {
     sort: () => link,
     limit: () => link,
+    select: () => link,
     lean: () => link,
     exec: () => Promise.resolve(result),
   };
@@ -145,6 +146,52 @@ describe('ExerciseService', () => {
         $or: { [k: string]: RegExp }[];
       };
       expect(() => new RegExp(filter.$or[0].nameHe.source)).not.toThrow();
+    });
+  });
+
+  describe('resolveNames', () => {
+    it('maps every name asked about, null where unrecognised', async () => {
+      model.find.mockReturnValue(
+        chain([
+          {
+            slug: 'bench-press',
+            nameHe: 'לחיצת חזה',
+            nameEn: 'Bench Press',
+            aliases: ['Flat Bench'],
+          },
+        ]),
+      );
+
+      const result = await service.resolveNames([
+        'bench press',
+        'לחיצת חזה',
+        'Flat Bench ',
+        'סחיבת צמיג',
+      ]);
+
+      expect(result).toEqual({
+        'bench press': 'bench-press',
+        'לחיצת חזה': 'bench-press',
+        'Flat Bench ': 'bench-press',
+        'סחיבת צמיג': null,
+      });
+      expect(model.find).toHaveBeenCalledTimes(1);
+    });
+
+    it('queries with anchored, escaped patterns only', async () => {
+      await service.resolveNames(['Row (bent)']);
+
+      const filter = (model.find.mock.calls as unknown[][])[0][0] as {
+        $or: { [k: string]: { $in: RegExp[] } }[];
+      };
+      const [pattern] = filter.$or[0].nameHe.$in;
+      expect(pattern.source).toBe('^Row \\(bent\\)$');
+      expect(pattern.flags).toContain('i');
+    });
+
+    it('does not query for blank names', async () => {
+      expect(await service.resolveNames(['  '])).toEqual({ '  ': null });
+      expect(model.find).not.toHaveBeenCalled();
     });
   });
 

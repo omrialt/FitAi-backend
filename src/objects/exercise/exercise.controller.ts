@@ -13,6 +13,7 @@ import { ExerciseService } from './exercise.service';
 // ValidationPipe then never sees a DTO to validate.
 import {
   ExerciseAlternativesDto,
+  ResolveExerciseNamesDto,
   SearchExercisesDto,
   SubstituteExercisesDto,
 } from '../../interfaces/exercise.interfaces';
@@ -67,6 +68,16 @@ export class ExerciseController {
       equipment: query.equipment,
       limit: query.limit,
     });
+  }
+
+  /**
+   * Catalogue slugs for several free-text names: `{ [name]: slug | null }`.
+   * Declared before `:slug` for the same reason as the two above.
+   */
+  @Get('resolve')
+  @Roles('user', 'trainer', 'admin')
+  resolve(@Query() query: ResolveExerciseNamesDto) {
+    return this.exerciseService.resolveNames(query.names);
   }
 
   @Get(':slug')
