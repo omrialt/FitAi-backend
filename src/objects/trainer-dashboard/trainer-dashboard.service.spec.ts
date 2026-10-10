@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import { BadRequestException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { TrainerDashboardService } from './trainer-dashboard.service';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
@@ -41,6 +42,7 @@ describe('TrainerDashboardService', () => {
   let sessionModel: { aggregate: jest.Mock };
   let physicalDataModel: { aggregate: jest.Mock };
   let trainingPlanModel: { find: jest.Mock };
+  let alertSettingsModel: { findOne: jest.Mock; findOneAndUpdate: jest.Mock };
 
   /**
    * Wires one scenario. The two physical-data aggregations are told apart by
@@ -120,6 +122,11 @@ describe('TrainerDashboardService', () => {
     sessionModel = { aggregate: jest.fn() };
     physicalDataModel = { aggregate: jest.fn() };
     trainingPlanModel = { find: jest.fn() };
+    // No stored settings by default: the roster runs on the defaults.
+    alertSettingsModel = {
+      findOne: jest.fn().mockReturnValue(findChain(null)),
+      findOneAndUpdate: jest.fn().mockReturnValue(findChain(null)),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -130,6 +137,10 @@ describe('TrainerDashboardService', () => {
         { provide: getModelToken('WorkoutSession'), useValue: sessionModel },
         { provide: getModelToken('PhysicalData'), useValue: physicalDataModel },
         { provide: getModelToken('TrainingPlan'), useValue: trainingPlanModel },
+        {
+          provide: getModelToken('TrainerAlertSettings'),
+          useValue: alertSettingsModel,
+        },
       ],
     }).compile();
 
@@ -383,6 +394,99 @@ describe('TrainerDashboardService', () => {
 
       expect(rows[0].fullName).toBe('Loud');
       expect(rows[0].alerts.length).toBeGreaterThan(rows[1].alerts.length);
+    });
+  });
+
+  describe("the trainer's own thresholds", () => {
+    const strict = {
+      idleInfoDays: 3,
+      idleWarnDays: 5,
+      stallMinSpanDays: 14,
+      stallMaxChangeKg: 1,
+    };
+
+    const idleFor = (days: number): Fixture => ({
+      ...healthy,
+      sessions: [
+        {
+          ...(healthy.sessions as Record<string, unknown>[])[0],
+          lastWorkoutAt: daysAgo(days),
+          last7: 0,
+          last14: 0,
+        },
+      ],
+    });
+
+    it('falls back to the defaults when the trainer never changed them', async () => {
+      await expect(service.getSettings(TRAINER)).resolves.toEqual({
+        idleInfoDays: 7,
+        idleWarnDays: 10,
+        stallMinSpanDays: 21,
+        stallMaxChangeKg: 0.5,
+      });
+    });
+
+    it('judges idleness by the stored thresholds', async () => {
+      alertSettingsModel.findOne.mockReturnValue(findChain(strict));
+
+      given(idleFor(4));
+      const info = await service.getOverview(TRAINER);
+      expect(info[0].alerts).toEqual([
+        expect.objectContaining({ code: 'missed_workouts', severity: 'info' }),
+      ]);
+
+      given(idleFor(5));
+      const warn = await service.getOverview(TRAINER);
+      expect(warn[0].alerts).toEqual([
+        expect.objectContaining({ code: 'missed_workouts', severity: 'warn' }),
+      ]);
+    });
+
+    it('judges a plateau by the stored span and change', async () => {
+      alertSettingsModel.findOne.mockReturnValue(findChain(strict));
+      given({
+        ...healthy,
+        weightWindow: [
+          {
+            _id: CLIENT,
+            firstKg: 80,
+            firstAt: daysAgo(15),
+            lastKg: 80.8,
+            lastAt: daysAgo(1),
+            count: 3,
+          },
+        ],
+      });
+
+      // 0.8 kg over 14 days: noise by these settings, not by the defaults.
+      await expect(codes()).resolves.toContain('weight_stalled');
+    });
+
+    it('saves the whole set, keyed on the caller', async () => {
+      await expect(service.saveSettings(TRAINER, strict)).resolves.toEqual(
+        strict,
+      );
+
+      const [filter, update, options] = alertSettingsModel.findOneAndUpdate
+        .mock.calls[0] as [
+        { trainerId: Types.ObjectId },
+        { $set: unknown },
+        { upsert: boolean },
+      ];
+      expect(String(filter.trainerId)).toBe(TRAINER);
+      expect(update.$set).toEqual(strict);
+      expect(options.upsert).toBe(true);
+    });
+
+    it('refuses a warn threshold that does not come after the info one', async () => {
+      await expect(
+        service.saveSettings(TRAINER, {
+          ...strict,
+          idleInfoDays: 5,
+          idleWarnDays: 5,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(alertSettingsModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
   });
 });

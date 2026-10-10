@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
@@ -8,17 +8,15 @@ import type {
   TrainerDashboardRow,
   TrainerWeightTrend,
 } from './trainer-dashboard.types';
+import {
+  DEFAULT_ALERT_SETTINGS,
+  type TrainerAlertSettings,
+} from './trainer-alert-settings.schema';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** No session in this many days is worth mentioning… */
-const IDLE_INFO_DAYS = 7;
-/** …and in this many, worth acting on. */
-const IDLE_WARN_DAYS = 10;
-/** Weight is only called "stalled" over a span at least this long. */
-const STALL_MIN_SPAN_DAYS = 21;
-/** Movement smaller than this over that span is noise, not progress. */
-const STALL_MAX_CHANGE_KG = 0.5;
+// The alert thresholds are the trainer's own — see trainer-alert-settings.schema.ts
+// for what each one means and the defaults used until they are changed.
 /** How far back the weight comparison looks for a starting point. */
 const WEIGHT_WINDOW_DAYS = 56;
 /** The window adherence is measured over — the same one the client's own dashboard uses. */
@@ -96,9 +94,63 @@ export class TrainerDashboardService {
     private readonly physicalDataModel: Model<unknown>,
     @InjectModel('TrainingPlan')
     private readonly trainingPlanModel: Model<unknown>,
+    @InjectModel('TrainerAlertSettings')
+    private readonly alertSettingsModel: Model<unknown>,
     private readonly trainerAccess: TrainerAccessService,
     private readonly workoutStats: WorkoutStatsService,
   ) {}
+
+  // ─── settings ─────────────────────────────────────────────────
+
+  /** The trainer's thresholds, or the defaults if they never changed them. */
+  async getSettings(trainerId: string): Promise<TrainerAlertSettings> {
+    const stored = await this.alertSettingsModel
+      .findOne({ trainerId: new Types.ObjectId(trainerId) })
+      .lean<Partial<TrainerAlertSettings> | null>()
+      .exec();
+    return {
+      idleInfoDays: stored?.idleInfoDays ?? DEFAULT_ALERT_SETTINGS.idleInfoDays,
+      idleWarnDays: stored?.idleWarnDays ?? DEFAULT_ALERT_SETTINGS.idleWarnDays,
+      stallMinSpanDays:
+        stored?.stallMinSpanDays ?? DEFAULT_ALERT_SETTINGS.stallMinSpanDays,
+      stallMaxChangeKg:
+        stored?.stallMaxChangeKg ?? DEFAULT_ALERT_SETTINGS.stallMaxChangeKg,
+    };
+  }
+
+  /**
+   * Replaces the trainer's thresholds.
+   *
+   * "Worth acting on" has to come later than "worth mentioning" — otherwise a
+   * client crosses into `warn` before `info` and the gentler alert can never be
+   * seen. Equal is refused for the same reason.
+   */
+  async saveSettings(
+    trainerId: string,
+    settings: TrainerAlertSettings,
+  ): Promise<TrainerAlertSettings> {
+    if (settings.idleWarnDays <= settings.idleInfoDays) {
+      throw new BadRequestException(
+        'idleWarnDays must be greater than idleInfoDays',
+      );
+    }
+    const values: TrainerAlertSettings = {
+      idleInfoDays: settings.idleInfoDays,
+      idleWarnDays: settings.idleWarnDays,
+      stallMinSpanDays: settings.stallMinSpanDays,
+      stallMaxChangeKg: settings.stallMaxChangeKg,
+    };
+    await this.alertSettingsModel
+      .findOneAndUpdate(
+        { trainerId: new Types.ObjectId(trainerId) },
+        { $set: values },
+        { upsert: true, runValidators: true },
+      )
+      .exec();
+    return values;
+  }
+
+  // ─── the overview ─────────────────────────────────────────────
 
   /** One row per client who has accepted this trainer, worst first. */
   async getOverview(trainerId: string): Promise<TrainerDashboardRow[]> {
@@ -111,8 +163,14 @@ export class TrainerDashboardService {
     const objectIds = clientIds.map((id) => new Types.ObjectId(id));
     const now = Date.now();
 
-    const [users, sessionRows, weightWindowRows, weightTotalRows, planRows] =
-      await Promise.all([
+    const [
+      users,
+      sessionRows,
+      weightWindowRows,
+      weightTotalRows,
+      planRows,
+      settings,
+    ] = await Promise.all([
         this.userModel
           .find({ _id: { $in: objectIds } })
           .select('fullName email avatarUrl')
@@ -126,6 +184,7 @@ export class TrainerDashboardService {
           .select('userId days.dayOfWeek')
           .lean<PlanRow[]>()
           .exec(),
+        this.getSettings(trainerId),
       ]);
 
     const sessionsBy = this.byId(sessionRows);
@@ -147,6 +206,7 @@ export class TrainerDashboardService {
           weightTotal: weightTotalBy.get(user._id.toString())?.count ?? 0,
           plans: plansBy.get(user._id.toString()) ?? [],
           now,
+          settings,
         }),
       ),
     );
@@ -168,8 +228,10 @@ export class TrainerDashboardService {
     weightTotal: number;
     plans: PlanRow[];
     now: number;
+    settings: TrainerAlertSettings;
   }): Promise<TrainerDashboardRow> {
-    const { user, sessions, weightWindow, weightTotal, plans, now } = input;
+    const { user, sessions, weightWindow, weightTotal, plans, now, settings } =
+      input;
     const clientId = user._id.toString();
 
     const lastWorkoutAt = sessions?.lastWorkoutAt
@@ -212,7 +274,7 @@ export class TrainerDashboardService {
       alerts: [],
     };
 
-    row.alerts = this.buildAlerts(row, weightWindow);
+    row.alerts = this.buildAlerts(row, weightWindow, settings);
     return row;
   }
 
@@ -221,6 +283,7 @@ export class TrainerDashboardService {
   private buildAlerts(
     row: TrainerDashboardRow,
     weightWindow: WeightWindowRow | null,
+    settings: TrainerAlertSettings,
   ): TrainerAlert[] {
     const alerts: TrainerAlert[] = [];
 
@@ -229,13 +292,13 @@ export class TrainerDashboardService {
       // started. The two need different words from the trainer.
       alerts.push({ code: 'never_trained', severity: 'warn' });
     } else if (row.daysSinceLastWorkout !== null) {
-      if (row.daysSinceLastWorkout >= IDLE_WARN_DAYS) {
+      if (row.daysSinceLastWorkout >= settings.idleWarnDays) {
         alerts.push({
           code: 'missed_workouts',
           severity: 'warn',
           since: row.lastWorkoutAt,
         });
-      } else if (row.daysSinceLastWorkout >= IDLE_INFO_DAYS) {
+      } else if (row.daysSinceLastWorkout >= settings.idleInfoDays) {
         alerts.push({
           code: 'missed_workouts',
           severity: 'info',
@@ -254,7 +317,7 @@ export class TrainerDashboardService {
 
     if (row.totalMeasurements === 0) {
       alerts.push({ code: 'no_measurements', severity: 'info' });
-    } else if (this.isStalled(row.weight)) {
+    } else if (this.isStalled(row.weight, settings)) {
       alerts.push({
         code: 'weight_stalled',
         severity: 'info',
@@ -274,11 +337,14 @@ export class TrainerDashboardService {
    * why this returns false rather than treating a single weigh-in as zero
    * change.
    */
-  private isStalled(weight: TrainerWeightTrend | null): boolean {
+  private isStalled(
+    weight: TrainerWeightTrend | null,
+    settings: TrainerAlertSettings,
+  ): boolean {
     if (!weight || weight.measurements < 2) return false;
     return (
-      weight.spanDays >= STALL_MIN_SPAN_DAYS &&
-      Math.abs(weight.changeKg) < STALL_MAX_CHANGE_KG
+      weight.spanDays >= settings.stallMinSpanDays &&
+      Math.abs(weight.changeKg) < settings.stallMaxChangeKg
     );
   }
 
