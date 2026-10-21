@@ -56,7 +56,26 @@ export const updateProfileSchema = z.object({
  */
 export const googleExchangeSchema = z.object({
   code: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid authorization code'),
+  // PKCE verifier, sent only by the Android app (RFC 7636 §4.1 alphabet).
+  codeVerifier: z
+    .string()
+    .regex(/^[A-Za-z0-9\-._~]{43,128}$/, 'Invalid code verifier')
+    .optional(),
 });
+
+/**
+ * Query of `GET /auth/google`. Empty for the web; the Android app sends its
+ * platform and a PKCE S256 challenge, which is always 43 base64url characters.
+ */
+export const googleAuthQuerySchema = z.union([
+  z.object({
+    platform: z.literal('android'),
+    challenge: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{43}$/, 'Invalid code challenge'),
+  }),
+  z.object({ platform: z.undefined() }).passthrough(),
+]);
 
 export const completeProfileSchema = z.object({
   fullName: z.string().min(1),

@@ -8,6 +8,7 @@ import type { AuthCode } from './auth-code.schema';
 export interface RedeemedAuthCode {
   userId: string;
   needsProfile: boolean;
+  codeChallenge?: string;
 }
 
 /**
@@ -24,14 +25,24 @@ export class AuthCodeService {
     private readonly authCodeModel: Model<AuthCode>,
   ) {}
 
-  /** Mint a code for `userId` and return the plaintext exactly once. */
-  async issue(userId: string, needsProfile: boolean): Promise<string> {
+  /**
+   * Mint a code for `userId` and return the plaintext exactly once.
+   *
+   * `codeChallenge` binds the code to a PKCE verifier held by the Android app;
+   * such a code can only be redeemed together with that verifier.
+   */
+  async issue(
+    userId: string,
+    needsProfile: boolean,
+    codeChallenge?: string,
+  ): Promise<string> {
     const code = randomBytes(32).toString('hex');
 
     await this.authCodeModel.create({
       codeHash: AuthCodeService.hash(code),
       userId,
       needsProfile,
+      ...(codeChallenge ? { codeChallenge } : {}),
       expiresAt: new Date(Date.now() + AuthCodeService.TTL_MS),
     });
 
@@ -57,7 +68,11 @@ export class AuthCodeService {
       return null;
     }
 
-    return { userId: doc.userId, needsProfile: doc.needsProfile };
+    return {
+      userId: doc.userId,
+      needsProfile: doc.needsProfile,
+      ...(doc.codeChallenge ? { codeChallenge: doc.codeChallenge } : {}),
+    };
   }
 
   private static hash(code: string): string {

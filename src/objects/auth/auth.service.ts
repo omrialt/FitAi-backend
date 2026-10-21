@@ -25,6 +25,11 @@ import {
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { AuthCodeService } from './auth-code.service';
+import {
+  encodeOAuthState,
+  verifierMatches,
+  type OAuthState,
+} from './oauth-state';
 
 @Injectable()
 export class AuthService {
@@ -305,8 +310,11 @@ export class AuthService {
 
   /**
    * Get Google OAuth URL
+   *
+   * `state` is set only for the Android app (see `oauth-state.ts`); the web
+   * flow sends none and comes back exactly as before.
    */
-  getGoogleAuthUrl(): string {
+  getGoogleAuthUrl(state?: OAuthState): string {
     const clientId = process.env.GOOGLE_CLIENT_ID!;
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
     const redirectUri = `${backendUrl}/auth/google/callback`;
@@ -319,6 +327,9 @@ export class AuthService {
     googleAuthUrl.searchParams.append('response_type', 'code');
     googleAuthUrl.searchParams.append('scope', 'email profile');
     googleAuthUrl.searchParams.append('access_type', 'offline');
+    if (state) {
+      googleAuthUrl.searchParams.append('state', encodeOAuthState(state));
+    }
 
     return googleAuthUrl.toString();
   }
@@ -788,18 +799,34 @@ export class AuthService {
   /**
    * Mint a single-use code for the Google redirect. See `AuthCodeService`.
    */
-  async issueOAuthCode(userId: string, needsProfile: boolean): Promise<string> {
-    return this.authCodeService.issue(userId, needsProfile);
+  async issueOAuthCode(
+    userId: string,
+    needsProfile: boolean,
+    codeChallenge?: string,
+  ): Promise<string> {
+    return this.authCodeService.issue(userId, needsProfile, codeChallenge);
   }
 
   /**
    * Redeem a Google handoff code for a real session.
+   *
+   * A code issued to the Android app carries a PKCE challenge and is only
+   * honoured with the matching verifier. Redemption has already deleted it,
+   * so a wrong verifier burns the code rather than allowing another guess.
    */
   async exchangeOAuthCode(
     code: string,
+    codeVerifier?: string,
   ): Promise<AuthResponse & { needsProfile: boolean }> {
     const redeemed = await this.authCodeService.redeem(code);
     if (!redeemed) {
+      throw new UnauthorizedException('Invalid or expired authorization code');
+    }
+
+    if (
+      redeemed.codeChallenge &&
+      !(codeVerifier && verifierMatches(codeVerifier, redeemed.codeChallenge))
+    ) {
       throw new UnauthorizedException('Invalid or expired authorization code');
     }
 

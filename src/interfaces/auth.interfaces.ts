@@ -59,6 +59,7 @@ export interface CompleteProfileDto {
 
 export interface GoogleExchangeDto {
   code: string;
+  codeVerifier?: string;
 }
 
 export interface AuthResponse {

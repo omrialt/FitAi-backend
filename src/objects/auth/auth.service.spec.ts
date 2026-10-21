@@ -416,6 +416,42 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    describe('PKCE (Android app)', () => {
+      // RFC 7636 Appendix B test vector.
+      const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+      const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+
+      beforeEach(() => {
+        authCodeService.redeem.mockResolvedValue({
+          userId: 'user-1',
+          needsProfile: false,
+          codeChallenge: challenge,
+        });
+      });
+
+      it('returns a session with the matching verifier', async () => {
+        const result = await service.exchangeOAuthCode(
+          'd'.repeat(64),
+          verifier,
+        );
+
+        expect(result.tokens.accessToken).toEqual(expect.any(String));
+      });
+
+      // An intercepted redirect hands over the code but not the verifier.
+      it('rejects the code without a verifier', async () => {
+        await expect(
+          service.exchangeOAuthCode('e'.repeat(64)),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      });
+
+      it('rejects the code with the wrong verifier', async () => {
+        await expect(
+          service.exchangeOAuthCode('f'.repeat(64), 'x'.repeat(43)),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      });
+    });
+
     it('rejects a code whose user has since been deleted', async () => {
       authCodeService.redeem.mockResolvedValue({
         userId: 'user-1',

@@ -21,6 +21,8 @@ export interface AuthCode {
   codeHash: string;
   userId: string;
   needsProfile: boolean;
+  /** PKCE S256 challenge, for codes issued to the Android app. */
+  codeChallenge?: string;
   expiresAt: Date;
   createdAt?: Date;
 }
@@ -40,6 +42,10 @@ export const AuthCodeSchema = new Schema(
     needsProfile: {
       type: Boolean,
       default: false,
+    },
+    codeChallenge: {
+      type: String,
+      required: false,
     },
     expiresAt: {
       type: Date,
