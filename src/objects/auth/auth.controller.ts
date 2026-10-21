@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Query,
   Request,
   Res,
   UseGuards,
@@ -27,7 +28,13 @@ import {
   verifyEmailSchema,
   resendVerificationSchema,
   googleExchangeSchema,
+  googleAuthQuerySchema,
 } from './auth.schemas';
+import {
+  ANDROID_REDIRECT_BASE,
+  decodeOAuthState,
+  type OAuthState,
+} from './oauth-state';
 import type {
   LoginDto,
   RegisterDto,
@@ -42,6 +49,25 @@ import type {
   GoogleExchangeDto,
 } from '../../interfaces/auth.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
+
+/**
+ * Where the Google callback sends the browser: the website, or — for a
+ * sign-in started in the Android app — the app's own scheme, which Android
+ * hands back to the app. `path` is the page that finishes the sign-in.
+ */
+function oauthRedirect(
+  state: OAuthState | null,
+  path: '/login' | '/complete-profile' | '/auth/google/callback',
+  params: Record<string, string>,
+): string {
+  if (state?.platform === 'android') {
+    const query = new URLSearchParams({ ...params, next: path });
+    return `${ANDROID_REDIRECT_BASE}?${query.toString()}`;
+  }
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  return `${frontendUrl}${path}?${new URLSearchParams(params).toString()}`;
+}
 
 @Controller('auth')
 export class AuthController {
@@ -99,9 +125,16 @@ export class AuthController {
    * Initiate Google OAuth login
    */
   @Get('google')
-  googleAuth(@Res() res: express.Response) {
-    const googleAuthUrl = this.authService.getGoogleAuthUrl();
-    res.redirect(googleAuthUrl);
+  googleAuth(
+    @Query(new ZodValidationPipe(googleAuthQuerySchema))
+    query: { platform?: 'android'; challenge?: string },
+    @Res() res: express.Response,
+  ) {
+    const state =
+      query.platform === 'android' && query.challenge
+        ? { platform: 'android' as const, challenge: query.challenge }
+        : undefined;
+    res.redirect(this.authService.getGoogleAuthUrl(state));
   }
 
   /**
@@ -114,24 +147,19 @@ export class AuthController {
   ) {
     const code = req.query.code as string;
     const error = req.query.error as string;
+    const state = decodeOAuthState(req.query.state);
 
     if (error) {
-      // Redirect to frontend with error
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      return res.redirect(
-        `${frontendUrl}/login?error=${encodeURIComponent(error)}`,
-      );
+      return res.redirect(oauthRedirect(state, '/login', { error }));
     }
 
     if (!code) {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      return res.redirect(`${frontendUrl}/login?error=no_code`);
+      return res.redirect(oauthRedirect(state, '/login', { error: 'no_code' }));
     }
 
     try {
       const { userId, needsProfile } =
         await this.authService.handleGoogleCallback(code);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
       // This redirect used to carry accessToken, refreshToken and the whole
       // user object as query parameters, which put a working session into
@@ -141,15 +169,17 @@ export class AuthController {
       const handoff = await this.authService.issueOAuthCode(
         userId,
         needsProfile,
+        state?.challenge,
       );
-      const params = new URLSearchParams({ code: handoff });
 
       // If user needs to complete profile, redirect to complete-profile page
       const redirectPath = needsProfile
         ? '/complete-profile'
         : '/auth/google/callback';
 
-      return res.redirect(`${frontendUrl}${redirectPath}?${params.toString()}`);
+      return res.redirect(
+        oauthRedirect(state, redirectPath, { code: handoff }),
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
@@ -157,9 +187,9 @@ export class AuthController {
         `Google OAuth authentication failed: ${errorMessage}`,
         error instanceof Error ? error.stack : undefined,
       );
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const encodedError = encodeURIComponent(errorMessage);
-      return res.redirect(`${frontendUrl}/login?error=${encodedError}`);
+      return res.redirect(
+        oauthRedirect(state, '/login', { error: errorMessage }),
+      );
     }
   }
 
@@ -175,7 +205,7 @@ export class AuthController {
     @Body(new ZodValidationPipe(googleExchangeSchema))
     dto: GoogleExchangeDto,
   ) {
-    return this.authService.exchangeOAuthCode(dto.code);
+    return this.authService.exchangeOAuthCode(dto.code, dto.codeVerifier);
   }
 
   /**
