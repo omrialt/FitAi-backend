@@ -109,6 +109,8 @@ export async function createApp(): Promise<INestApplication> {
   // frontend can be permitted without a code change; local dev ports stay
   // allowed by default. FRONTEND_URL is included since it is already the
   // canonical "where the UI lives" setting used by the OAuth and reset flows.
+  // https://localhost is the fixed origin of the Capacitor Android WebView: the
+  // installed app serves its bundle from there, not from the deployed frontend.
   const corsOrigins = Array.from(
     new Set(
       [
@@ -116,6 +118,7 @@ export async function createApp(): Promise<INestApplication> {
         process.env.FRONTEND_URL,
         'http://localhost:5173',
         'http://localhost:3000',
+        'https://localhost',
       ]
         .map((o) => o?.trim())
         .filter((o): o is string => !!o),
