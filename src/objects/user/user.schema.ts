@@ -125,6 +125,13 @@ export const UserSchema = new Schema(
     emailVerificationToken: { type: String, select: false },
     emailVerificationExpires: { type: Date, select: false },
     timezone: { type: String, default: 'UTC' },
+    // Which push notifications this user wants (PushService checks before
+    // every send). Missing means on: every kind defaults to true.
+    notificationPrefs: {
+      messages: { type: Boolean, default: true },
+      plans: { type: Boolean, default: true },
+      connections: { type: Boolean, default: true },
+    },
     googleCalendar: {
       accessToken: { type: String },
       refreshToken: { type: String },

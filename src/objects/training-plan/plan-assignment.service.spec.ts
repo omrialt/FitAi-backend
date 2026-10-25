@@ -5,6 +5,10 @@ import { Types } from 'mongoose';
 import { PlanAssignmentService } from './plan-assignment.service';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
 import { TrainingPlanController } from './training-plan.controller';
+import { PushService } from '../push/push.service';
+
+/** Push is fire-and-forget; these specs only check who would be told. */
+export const pushMock = { notify: jest.fn() };
 
 const TRAINER = new Types.ObjectId().toString();
 const CLIENT_A = new Types.ObjectId().toString();
@@ -101,6 +105,7 @@ describe('PlanAssignmentService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: PushService, useValue: pushMock },
         PlanAssignmentService,
         { provide: getModelToken('TrainingPlan'), useValue: planModel },
         { provide: TrainerAccessService, useValue: trainerAccess },
@@ -125,6 +130,19 @@ describe('PlanAssignmentService', () => {
         true,
       );
       expect(saved.every((plan) => plan.isTemplate === false)).toBe(true);
+    });
+
+    it('pushes the new plan to each client it was created for', async () => {
+      pushMock.notify.mockClear();
+
+      await service.assign(TEMPLATE_ID, TRAINER, [CLIENT_A, CLIENT_B]);
+
+      expect(
+        pushMock.notify.mock.calls.map((c: unknown[]) => [c[0], c[1]]),
+      ).toEqual([
+        [CLIENT_A, 'plans'],
+        [CLIENT_B, 'plans'],
+      ]);
     });
 
     /**
@@ -211,6 +229,7 @@ describe('PlanAssignmentService', () => {
 
       const module: TestingModule = await Test.createTestingModule({
         providers: [
+          { provide: PushService, useValue: pushMock },
           PlanAssignmentService,
           { provide: getModelToken('TrainingPlan'), useValue: failing },
           { provide: TrainerAccessService, useValue: trainerAccess },

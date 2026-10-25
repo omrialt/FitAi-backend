@@ -9,6 +9,10 @@ import {
 import { Types } from 'mongoose';
 import { MessageService } from './message.service';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
+import { PushService } from '../push/push.service';
+
+/** Push is fire-and-forget; these specs only check who would be told. */
+export const pushMock = { notify: jest.fn() };
 
 const TRAINER = new Types.ObjectId().toString();
 const CLIENT = new Types.ObjectId().toString();
@@ -76,6 +80,7 @@ describe('MessageService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: PushService, useValue: pushMock },
         MessageService,
         { provide: getModelToken('Message'), useValue: messageModel },
         { provide: getModelToken('User'), useValue: userModel },
@@ -104,6 +109,30 @@ describe('MessageService', () => {
       expect(String(doc.clientId)).toBe(CLIENT);
       expect(String(doc.senderId)).toBe(TRAINER);
       expect(doc.readAt).toBeNull();
+    });
+
+    it('pushes the message to the other side, never to the sender', async () => {
+      connections([[TRAINER, CLIENT]]);
+      (userModel as unknown as { findById: jest.Mock }).findById = jest.fn(
+        () => ({
+          select: () => ({
+            lean: () => Promise.resolve({ fullName: 'Omri Trainer' }),
+          }),
+        }),
+      );
+      pushMock.notify.mockClear();
+
+      await service.send(TRAINER, CLIENT, 'Good session today');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(pushMock.notify).toHaveBeenCalledWith(
+        CLIENT,
+        'messages',
+        expect.objectContaining({
+          to: '/messages',
+          body: 'Good session today',
+        }),
+      );
     });
 
     it('lets that client write back, into the same pair', async () => {

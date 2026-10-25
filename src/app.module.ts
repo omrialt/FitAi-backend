@@ -31,6 +31,7 @@ import { CalendarSyncModule } from './objects/calendar-sync/calendar-sync.module
 import { TrainerConnectionModule } from './objects/trainer-connection/trainer-connection.module';
 import { TrainerDashboardModule } from './objects/trainer-dashboard/trainer-dashboard.module';
 import { MessageModule } from './objects/message/message.module';
+import { PushModule } from './objects/push/push.module';
 import { TrainerNoteModule } from './objects/trainer-note/trainer-note.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { TrainerAccessModule } from './common/trainer-access/trainer-access.module';
@@ -105,6 +106,7 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     // The first channel in the app that carries a person's own words to
     // another person. Both ends are gated on the same accepted connection.
     MessageModule,
+    PushModule,
     // And the half that is not a conversation: what the coach writes about a
     // client, which the client never sees.
     TrainerNoteModule,

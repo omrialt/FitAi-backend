@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { TrainerConnectionService } from './trainer-connection.service';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
+import { PushService } from '../push/push.service';
+
+/** Push is fire-and-forget; these specs only check who would be told. */
+export const pushMock = { notify: jest.fn() };
 
 const TRAINER = 'trainer-1';
 const CLIENT = 'client-1';
@@ -69,6 +73,7 @@ describe('TrainerConnectionService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: PushService, useValue: pushMock },
         TrainerConnectionService,
         {
           provide: getModelToken('TrainerConnection'),
@@ -152,6 +157,23 @@ describe('TrainerConnectionService', () => {
       );
     });
 
+    it('also pushes the invite to the client', async () => {
+      userModel.findById
+        .mockReturnValueOnce(userLookup(CLIENT_USER))
+        .mockReturnValueOnce(userLookup({ fullName: 'Omri Trainer' }));
+      connectionModel.findOne.mockResolvedValue(null);
+      connectionModel.create.mockResolvedValue(connDoc());
+      pushMock.notify.mockClear();
+
+      await service.invite(TRAINER, CLIENT);
+
+      expect(pushMock.notify).toHaveBeenCalledWith(
+        CLIENT,
+        'connections',
+        expect.objectContaining({ to: '/profile' }),
+      );
+    });
+
     it('still creates the invite when the notification email fails', async () => {
       userModel.findById.mockReturnValue(userLookup(CLIENT_USER));
       connectionModel.findOne.mockResolvedValue(null);
@@ -185,6 +207,25 @@ describe('TrainerConnectionService', () => {
       expect(userModel.updateOne).toHaveBeenCalledWith(
         { _id: CLIENT },
         { $set: { trainerId: TRAINER } },
+      );
+    });
+
+    it('pushes the acceptance to the trainer', async () => {
+      connectionModel.findById.mockResolvedValue(
+        connDoc({ status: 'pending' }),
+      );
+      userModel.findById.mockReturnValue(
+        userLookup({ fullName: 'Dana Client' }),
+      );
+      pushMock.notify.mockClear();
+
+      await service.accept('conn-1', CLIENT);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(pushMock.notify).toHaveBeenCalledWith(
+        TRAINER,
+        'connections',
+        expect.objectContaining({ to: '/clients' }),
       );
     });
 

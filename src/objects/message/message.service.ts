@@ -9,6 +9,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import { TrainerAccessService } from '../../common/trainer-access/trainer-access.service';
+import { PushService } from '../push/push.service';
+import { pushMessages } from '../push/push.messages';
 import type { MessageDocument } from './message.schema';
 
 /** How many messages one thread request returns, newest kept. */
@@ -95,6 +97,7 @@ export class MessageService {
     @InjectModel('User')
     private readonly userModel: Model<unknown>,
     private readonly trainerAccess: TrainerAccessService,
+    private readonly push: PushService,
   ) {}
 
   /** Write a message into the pair the two users form. */
@@ -118,7 +121,30 @@ export class MessageService {
       `Message ${created._id.toString()} from ${callerId} in ` +
         `${pair.trainerId}/${pair.clientId}`,
     );
+    void this.pushToRecipient(callerId, pair, body.trim());
     return created;
+  }
+
+  /** The other side of the pair gets a push; failures are PushService's to swallow. */
+  private async pushToRecipient(
+    callerId: string,
+    pair: { trainerId: string; clientId: string },
+    body: string,
+  ): Promise<void> {
+    try {
+      const recipient =
+        callerId === pair.trainerId ? pair.clientId : pair.trainerId;
+      const sender = await this.userModel
+        .findById(callerId)
+        .select('fullName')
+        .lean<{ fullName?: string }>();
+      this.push.notify(recipient, 'messages', {
+        ...pushMessages.message(sender?.fullName ?? 'FitAi', body),
+        to: '/messages',
+      });
+    } catch (error) {
+      this.logger.warn(`Message push skipped: ${String(error)}`);
+    }
   }
 
   /**
