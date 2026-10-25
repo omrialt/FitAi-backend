@@ -12,6 +12,8 @@ import type {
   TrainingPlanDocument,
 } from './training-plan.schema';
 import { getIdString } from '../../utils/helpers';
+import { PushService } from '../push/push.service';
+import { pushMessages } from '../push/push.messages';
 
 export type AssignmentStatus = 'created' | 'skipped' | 'failed';
 
@@ -59,6 +61,7 @@ export class PlanAssignmentService {
     @InjectModel('TrainingPlan')
     private readonly planModel: Model<TrainingPlanDocument>,
     private readonly trainerAccess: TrainerAccessService,
+    private readonly push: PushService,
   ) {}
 
   /** The caller's own templates, newest first. */
@@ -177,6 +180,12 @@ export class PlanAssignmentService {
           clientId,
           status: 'created',
           planId: getIdString(saved._id),
+        });
+        this.push.notify(clientId, 'plans', {
+          ...pushMessages.planAssigned(
+            typeof template.title === 'string' ? template.title : '',
+          ),
+          to: '/my-trainings',
         });
       } catch (error) {
         // One client's failure is that client's row, not the batch's.

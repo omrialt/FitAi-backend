@@ -13,6 +13,8 @@ import { UserDocument } from '../user/user.schema';
 import { handleMongoError } from '../../utils/mongo.helpers';
 import { getIdString } from '../../utils/helpers';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
+import { PushService } from '../push/push.service';
+import { pushMessages } from '../push/push.messages';
 
 // Fields exposed when populating the other party of a connection
 const CLIENT_FIELDS = 'fullName email avatarUrl role';
@@ -28,6 +30,7 @@ export class TrainerConnectionService {
     @InjectModel('User')
     private readonly userModel: Model<UserDocument>,
     private readonly nodemailerService: NodemailerService,
+    private readonly push: PushService,
   ) {}
 
   /**
@@ -69,7 +72,7 @@ export class TrainerConnectionService {
         existing.initiatedBy = 'trainer';
         this.logger.debug(`Reactivated invite ${existing._id.toString()}`);
         const reactivated = await existing.save();
-        await this.notifyClientOfInvite(trainerId, client);
+        await this.notifyClientOfInvite(trainerId, clientId, client);
         return reactivated;
       }
 
@@ -80,7 +83,7 @@ export class TrainerConnectionService {
         initiatedBy: 'trainer',
       });
       this.logger.debug(`Created invite ${created._id.toString()}`);
-      await this.notifyClientOfInvite(trainerId, client);
+      await this.notifyClientOfInvite(trainerId, clientId, client);
       return created;
     } catch (error) {
       handleMongoError(error);
@@ -103,6 +106,7 @@ export class TrainerConnectionService {
       { $set: { trainerId: connection.trainerId } },
     );
     this.logger.debug(`Client ${clientId} accepted ${connectionId}`);
+    void this.pushAccepted(getIdString(connection.trainerId), clientId);
     return connection;
   }
 
@@ -183,17 +187,20 @@ export class TrainerConnectionService {
    */
   private async notifyClientOfInvite(
     trainerId: string,
+    clientId: string,
     client: UserDocument,
   ): Promise<void> {
+    let trainerName: string | undefined;
     try {
       const trainer = await this.userModel
         .findById(trainerId)
         .select('fullName')
         .lean();
+      trainerName = trainer?.fullName;
 
       await this.nodemailerService.sendTrainerInviteEmail(
         client.email,
-        trainer?.fullName ?? 'A trainer',
+        trainerName ?? 'A trainer',
         client.fullName,
       );
     } catch (error) {
@@ -201,6 +208,35 @@ export class TrainerConnectionService {
         `Failed to email invite notification to ${client.email}`,
         error instanceof Error ? error.stack : String(error),
       );
+    }
+
+    // Separate from the mail: neither channel failing may cost the other.
+    try {
+      this.push.notify(clientId, 'connections', {
+        ...pushMessages.invite(trainerName ?? 'מאמן'),
+        to: '/profile',
+      });
+    } catch (error) {
+      this.logger.warn(`Invite push skipped: ${String(error)}`);
+    }
+  }
+
+  /** The trainer hears that the client accepted. */
+  private async pushAccepted(
+    trainerId: string,
+    clientId: string,
+  ): Promise<void> {
+    try {
+      const client = await this.userModel
+        .findById(clientId)
+        .select('fullName')
+        .lean();
+      this.push.notify(trainerId, 'connections', {
+        ...pushMessages.accepted(client?.fullName ?? 'מתאמן'),
+        to: '/clients',
+      });
+    } catch (error) {
+      this.logger.warn(`Accept push skipped: ${String(error)}`);
     }
   }
 

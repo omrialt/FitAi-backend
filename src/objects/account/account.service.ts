@@ -42,6 +42,8 @@ export const OWNED_BY_USER_ID = [
   'TokenBlacklist',
   'RefreshTokenFamily',
   'AuthCode',
+  // Push delivery addresses: deleted with the account, never exported.
+  'DeviceToken',
 ] as const;
 
 type OwnedModelName = (typeof OWNED_BY_USER_ID)[number];
@@ -106,6 +108,8 @@ export class AccountService {
     @InjectModel('RefreshTokenFamily')
     private readonly refreshTokenFamilyModel: Model<AnyDoc>,
     @InjectModel('AuthCode') private readonly authCodeModel: Model<AnyDoc>,
+    @InjectModel('DeviceToken')
+    private readonly deviceTokenModel: Model<AnyDoc>,
     @InjectModel('PhysicalTarget')
     private readonly physicalTargetModel: Model<AnyDoc>,
     @InjectModel('Message') private readonly messageModel: Model<AnyDoc>,
@@ -134,6 +138,7 @@ export class AccountService {
       TokenBlacklist: this.tokenBlacklistModel,
       RefreshTokenFamily: this.refreshTokenFamilyModel,
       AuthCode: this.authCodeModel,
+      DeviceToken: this.deviceTokenModel,
     };
     return models[name];
   }

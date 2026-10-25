@@ -22,6 +22,7 @@ import { PhysicalTargetSchema } from '../physical-target/physical-target.schema'
 import { MessageSchema } from '../message/message.schema';
 import { TrainerNoteSchema } from '../trainer-note/trainer-note.schema';
 import { TrainerAlertSettingsSchema } from '../trainer-dashboard/trainer-alert-settings.schema';
+import { DeviceTokenSchema } from '../push/device-token.schema';
 
 /**
  * Registers every collection that stores something about a user.
@@ -53,6 +54,7 @@ import { TrainerAlertSettingsSchema } from '../trainer-dashboard/trainer-alert-s
       { name: 'Message', schema: MessageSchema },
       { name: 'TrainerNote', schema: TrainerNoteSchema },
       { name: 'TrainerAlertSettings', schema: TrainerAlertSettingsSchema },
+      { name: 'DeviceToken', schema: DeviceTokenSchema },
     ]),
     CloudinaryModule,
   ],
