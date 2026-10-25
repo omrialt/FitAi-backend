@@ -179,6 +179,17 @@ export class WorkoutSessionController {
     );
   }
 
+  /**
+   * Totals and personal bests broken by one session, for the share card.
+   * Same access as reading the session itself.
+   */
+  @Get(':id/summary')
+  @Roles('user', 'trainer', 'admin')
+  async summary(@Param('id') id: string, @Request() req: AuthRequest) {
+    const session = await this.workoutSessionService.findById(id, req.user);
+    return this.workoutStatsService.summarize(session);
+  }
+
   @Get(':id')
   @Roles('user', 'trainer', 'admin')
   findOne(@Param('id') id: string, @Request() req: AuthRequest) {

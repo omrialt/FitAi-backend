@@ -657,3 +657,99 @@ describe('WorkoutStatsService', () => {
     });
   });
 });
+
+describe('WorkoutStatsService.summarize', () => {
+  let service: WorkoutStatsService;
+  let sessionModel: { find: jest.Mock };
+
+  beforeEach(async () => {
+    sessionModel = { find: jest.fn().mockReturnValue(chain([])) };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        WorkoutStatsService,
+        { provide: getModelToken('WorkoutSession'), useValue: sessionModel },
+        {
+          provide: getModelToken('TrainingPlan'),
+          useValue: { find: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(WorkoutStatsService);
+  });
+
+  const today = {
+    userId: USER,
+    performedAt: new Date('2026-10-25T09:00:00Z'),
+    dayName: 'Legs',
+    planTitle: 'PPL',
+    durationMinutes: 52,
+    exercises: [
+      {
+        name: 'Squat',
+        sets: [
+          { reps: 5, weight: 100 },
+          { reps: 8, weight: 80, drops: [{ reps: 6, weight: 60 }] },
+        ],
+      },
+      { name: 'Lunge', sets: [{ reps: 10, weight: 20 }] },
+    ],
+  };
+
+  it('totals the session, drops included, and finds the heaviest set', async () => {
+    const summary = await service.summarize(today);
+
+    expect(summary.totalSets).toBe(3);
+    expect(summary.totalReps).toBe(5 + 8 + 6 + 10);
+    expect(summary.volumeKg).toBe(500 + 640 + 360 + 200);
+    expect(summary.topSet).toEqual({ exercise: 'Squat', weight: 100, reps: 5 });
+    expect(summary).toMatchObject({
+      dayName: 'Legs',
+      planTitle: 'PPL',
+      durationMinutes: 52,
+    });
+  });
+
+  it('marks a record only when an earlier best is beaten', async () => {
+    // Earlier best squat: 95 x 5 → e1rm 110.8; today 100 x 5 → 116.7.
+    // Earlier best lunge: 20 x 12 → 28; today 20 x 10 → 26.7 (no record).
+    sessionModel.find.mockReturnValue(
+      chain([
+        { exercises: [{ name: 'Squat', sets: [{ reps: 5, weight: 95 }] }] },
+        { exercises: [{ name: 'Lunge', sets: [{ reps: 12, weight: 20 }] }] },
+      ]),
+    );
+
+    const summary = await service.summarize(today);
+
+    expect(summary.records).toEqual([
+      {
+        exercise: 'Squat',
+        weight: 100,
+        reps: 5,
+        estimatedOneRepMax: 116.7,
+        previousBest: 110.8,
+      },
+    ]);
+    const query = (sessionModel.find.mock.calls as unknown[][])[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(query).toMatchObject({
+      userId: USER,
+      performedAt: { $lt: today.performedAt },
+    });
+  });
+
+  it('does not call a first attempt or a tie a record', async () => {
+    sessionModel.find.mockReturnValue(
+      chain([
+        { exercises: [{ name: 'Squat', sets: [{ reps: 5, weight: 100 }] }] },
+      ]),
+    );
+
+    const summary = await service.summarize(today);
+
+    // Squat ties 116.7; Lunge was never done before.
+    expect(summary.records).toEqual([]);
+  });
+});

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { setVolume, topReps, topWeight } from './set-math';
+import { setTotalReps, setVolume, topReps, topWeight } from './set-math';
 
 /**
  * Derived training statistics: personal bests, streaks and adherence.
@@ -91,6 +91,37 @@ export interface ExerciseHistory {
   points: ExerciseHistoryPoint[];
   /** Every exercise the user has logged, so the picker offers real options. */
   availableExercises: string[];
+}
+
+/** What a single logged session amounts to — the share card and the log agree on it. */
+export interface SessionSummary {
+  performedAt: Date;
+  dayName?: string;
+  planTitle?: string;
+  durationMinutes?: number;
+  totalSets: number;
+  totalReps: number;
+  /** Drops included: they are work performed, as everywhere else. */
+  volumeKg: number;
+  topSet: { exercise: string; weight: number; reps: number } | null;
+  /** Personal bests this session broke, best first. */
+  records: {
+    exercise: string;
+    weight: number;
+    reps: number;
+    estimatedOneRepMax: number;
+    previousBest: number;
+  }[];
+}
+
+/** The fields of a session the summary reads. */
+export interface SummarisableSession {
+  userId: unknown;
+  performedAt: Date;
+  dayName?: string;
+  planTitle?: string;
+  durationMinutes?: number;
+  exercises?: SessionRow['exercises'];
 }
 
 interface SessionRow {
@@ -583,6 +614,107 @@ export class WorkoutStatsService {
           ? null
           : Math.min(100, Math.round((completed / planned) * 100)),
       windowDays,
+    };
+  }
+
+  // ─── one session ──────────────────────────────────────────────
+
+  /**
+   * Totals, the heaviest set and the personal bests broken by one session.
+   *
+   * The caller has already checked who may read it. A record means beating
+   * the best estimated 1RM from every *earlier* session of the same exercise
+   * — ranked the way personal bests are (top portion only, Epley). An exercise
+   * done for the first time is not a record: there was nothing to break. A tie
+   * is not one either.
+   */
+  async summarize(session: SummarisableSession): Promise<SessionSummary> {
+    let totalSets = 0;
+    let totalReps = 0;
+    let volume = 0;
+    let topSet: SessionSummary['topSet'] = null;
+    const bestHere = new Map<
+      string,
+      { weight: number; reps: number; e1rm: number }
+    >();
+
+    for (const exercise of session.exercises ?? []) {
+      for (const set of exercise.sets ?? []) {
+        totalSets += 1;
+        totalReps += setTotalReps(set);
+        volume += setVolume(set);
+
+        if (set.weight && (!topSet || topWeight(set) > topSet.weight)) {
+          topSet = {
+            exercise: exercise.name,
+            weight: topWeight(set),
+            reps: topReps(set),
+          };
+        }
+
+        if (!set.weight || !set.reps) continue;
+        const e1rm = this.epley(topWeight(set), topReps(set));
+        const held = bestHere.get(exercise.name);
+        if (!held || e1rm > held.e1rm) {
+          bestHere.set(exercise.name, {
+            weight: topWeight(set),
+            reps: topReps(set),
+            e1rm,
+          });
+        }
+      }
+    }
+
+    const records: SessionSummary['records'] = [];
+    if (bestHere.size > 0) {
+      const earlier = await this.sessionModel
+        .find({
+          userId: session.userId,
+          performedAt: { $lt: session.performedAt },
+          'exercises.name': { $in: [...bestHere.keys()] },
+        })
+        .select('exercises')
+        .lean<Pick<SessionRow, 'exercises'>[]>()
+        .exec();
+
+      const previous = new Map<string, number>();
+      for (const row of earlier) {
+        for (const exercise of row.exercises ?? []) {
+          if (!bestHere.has(exercise.name)) continue;
+          for (const set of exercise.sets ?? []) {
+            if (!set.weight || !set.reps) continue;
+            const e1rm = this.epley(topWeight(set), topReps(set));
+            if (e1rm > (previous.get(exercise.name) ?? 0))
+              previous.set(exercise.name, e1rm);
+          }
+        }
+      }
+
+      for (const [exercise, best] of bestHere) {
+        const before = previous.get(exercise);
+        if (before !== undefined && best.e1rm > before) {
+          records.push({
+            exercise,
+            weight: best.weight,
+            reps: best.reps,
+            estimatedOneRepMax: best.e1rm,
+            previousBest: before,
+          });
+        }
+      }
+      records.sort((a, b) => b.estimatedOneRepMax - a.estimatedOneRepMax);
+    }
+
+    return {
+      performedAt: session.performedAt,
+      dayName: session.dayName,
+      planTitle: session.planTitle,
+      durationMinutes: session.durationMinutes,
+      totalSets,
+      totalReps,
+      volumeKg: Math.round(volume * 10) / 10,
+      topSet,
+      records,
     };
   }
 
