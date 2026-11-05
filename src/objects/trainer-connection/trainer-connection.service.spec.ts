@@ -11,7 +11,7 @@ import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 import { PushService } from '../push/push.service';
 
 /** Push is fire-and-forget; these specs only check who would be told. */
-export const pushMock = { notify: jest.fn() };
+export const pushMock = { notify: jest.fn(), later: jest.fn() };
 
 const TRAINER = 'trainer-1';
 const CLIENT = 'client-1';
@@ -222,6 +222,7 @@ describe('TrainerConnectionService', () => {
       await service.accept('conn-1', CLIENT);
       await new Promise((resolve) => setImmediate(resolve));
 
+      expect(pushMock.later).toHaveBeenCalledWith(expect.any(Promise));
       expect(pushMock.notify).toHaveBeenCalledWith(
         TRAINER,
         'connections',

@@ -106,7 +106,9 @@ export class TrainerConnectionService {
       { $set: { trainerId: connection.trainerId } },
     );
     this.logger.debug(`Client ${clientId} accepted ${connectionId}`);
-    void this.pushAccepted(getIdString(connection.trainerId), clientId);
+    this.push.later(
+      this.pushAccepted(getIdString(connection.trainerId), clientId),
+    );
     return connection;
   }
 

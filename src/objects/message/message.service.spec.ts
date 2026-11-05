@@ -12,7 +12,7 @@ import { TrainerAccessService } from '../../common/trainer-access/trainer-access
 import { PushService } from '../push/push.service';
 
 /** Push is fire-and-forget; these specs only check who would be told. */
-export const pushMock = { notify: jest.fn() };
+export const pushMock = { notify: jest.fn(), later: jest.fn() };
 
 const TRAINER = new Types.ObjectId().toString();
 const CLIENT = new Types.ObjectId().toString();
@@ -125,6 +125,8 @@ describe('MessageService', () => {
       await service.send(TRAINER, CLIENT, 'Good session today');
       await new Promise((resolve) => setImmediate(resolve));
 
+      // Handed to `later` so Vercel does not freeze it mid-flight.
+      expect(pushMock.later).toHaveBeenCalledWith(expect.any(Promise));
       expect(pushMock.notify).toHaveBeenCalledWith(
         CLIENT,
         'messages',

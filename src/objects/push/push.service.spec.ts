@@ -9,6 +9,10 @@ jest.mock('firebase-admin/app', () => ({
   getApps: jest.fn(() => []),
   initializeApp: jest.fn(() => ({ name: 'fitai-push' })),
 }));
+const waitUntil = jest.fn<void, [Promise<unknown>]>();
+jest.mock('@vercel/functions', () => ({
+  waitUntil: (p: Promise<unknown>): void => waitUntil(p),
+}));
 jest.mock('firebase-admin/messaging', () => ({
   getMessaging: jest.fn(() => ({ sendEachForMulticast })),
 }));
@@ -125,6 +129,28 @@ describe('PushService', () => {
     await expect(service.sendToUser(USER, 'messages', payload)).resolves.toBe(
       0,
     );
+  });
+
+  // On Vercel the function is frozen once the response is sent; work that is
+  // not handed to waitUntil never reaches Firebase.
+  it('keeps the function alive until the push settles', async () => {
+    await build('{"project_id":"fitai"}');
+    waitUntil.mockClear();
+
+    service.notify(USER, 'messages', payload);
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    await waitUntil.mock.calls[0][0];
+    expect(sendEachForMulticast).toHaveBeenCalled();
+  });
+
+  it('never lets background work reject unhandled', async () => {
+    await build(undefined);
+    waitUntil.mockClear();
+
+    service.later(Promise.reject(new Error('boom')));
+
+    await expect(waitUntil.mock.calls[0][0]).resolves.toBeUndefined();
   });
 
   it('moves a phone to whoever signs in on it', async () => {
