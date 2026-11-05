@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
+import { waitUntil } from '@vercel/functions';
 import type { DeviceToken } from './device-token.schema';
 
 export type PushKind = 'messages' | 'plans' | 'connections';
@@ -166,6 +167,11 @@ export class PushService {
       if (dead.length > 0)
         await this.tokenModel.deleteMany({ token: { $in: dead } });
 
+      // The only trace that a push actually left: without it, "nothing
+      // arrived" and "nothing was sent" look the same in the logs.
+      this.logger.log(
+        `Push to ${userId} (${kind}): ${result.successCount}/${tokens.length} delivered`,
+      );
       return result.successCount;
     } catch (error) {
       this.logger.error(
@@ -176,8 +182,29 @@ export class PushService {
     }
   }
 
-  /** Fire and forget, for callers that have already saved what the push is about. */
+  /**
+   * Run push work after the response, without losing it.
+   *
+   * On Vercel the function is frozen as soon as the response is sent, so a
+   * bare `void promise` stopped before it reached Firebase — every push was
+   * lost in production while working locally and in tests. `waitUntil` keeps
+   * the function alive until the work settles, without delaying the response.
+   * Outside Vercel it is a no-op and the promise simply runs.
+   */
+  later(task: Promise<unknown>): void {
+    const settled = task.then(
+      () => undefined,
+      (error: unknown) =>
+        this.logger.error(
+          'Background push work failed',
+          error instanceof Error ? error.stack : String(error),
+        ),
+    );
+    waitUntil(settled);
+  }
+
+  /** For callers that have already saved what the push is about. */
   notify(userId: string, kind: PushKind, payload: PushPayload): void {
-    void this.sendToUser(userId, kind, payload);
+    this.later(this.sendToUser(userId, kind, payload));
   }
 }

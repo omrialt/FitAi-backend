@@ -8,7 +8,7 @@ import { TrainingPlanController } from './training-plan.controller';
 import { PushService } from '../push/push.service';
 
 /** Push is fire-and-forget; these specs only check who would be told. */
-export const pushMock = { notify: jest.fn() };
+export const pushMock = { notify: jest.fn(), later: jest.fn() };
 
 const TRAINER = new Types.ObjectId().toString();
 const CLIENT_A = new Types.ObjectId().toString();

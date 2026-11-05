@@ -121,7 +121,7 @@ export class MessageService {
       `Message ${created._id.toString()} from ${callerId} in ` +
         `${pair.trainerId}/${pair.clientId}`,
     );
-    void this.pushToRecipient(callerId, pair, body.trim());
+    this.push.later(this.pushToRecipient(callerId, pair, body.trim()));
     return created;
   }
 
