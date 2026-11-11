@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { AnthropicService } from '../../common/anthropic/anthropic.service';
 import { WorkoutStatsService } from '../workout-session/workout-stats.service';
 import { ProgressionService } from '../workout-session/progression.service';
+import {
+  CoachSession,
+  ExerciseProgress,
+  WorkoutInsightsService,
+} from '../workout-session/workout-insights.service';
 
 /**
  * Questions about your own training, answered from your own numbers.
@@ -83,6 +88,8 @@ export interface ChatTurn {
 }
 
 export interface CoachContext {
+  /** When the question was asked, so "today" means something. UTC. */
+  now: string;
   windowDays: number;
   streakWeeks: number;
   totalWorkoutDays: number;
@@ -103,6 +110,10 @@ export interface CoachContext {
     action: string;
     suggested: { weight: number; reps: number; sets: number };
   }[];
+  /** The latest sessions as logged, newest first. Numbers only, no notes. */
+  recentSessions: CoachSession[];
+  /** How each exercise has moved across the whole log. */
+  exercises: ExerciseProgress[];
 }
 
 export interface CoachReply {
@@ -117,6 +128,7 @@ export class CoachChatService {
     private readonly anthropic: AnthropicService,
     private readonly stats: WorkoutStatsService,
     private readonly progression: ProgressionService,
+    private readonly insights: WorkoutInsightsService,
   ) {}
 
   get enabled(): boolean {
@@ -131,13 +143,15 @@ export class CoachChatService {
    * influence, so nothing the user types changes what the model can see.
    */
   async buildContext(userId: string): Promise<CoachContext> {
-    const [stats, fatigue, overload] = await Promise.all([
+    const [stats, fatigue, overload, snapshot] = await Promise.all([
       this.stats.getStats(userId, 30),
       this.stats.getFatigueSignal(userId),
       this.progression.getOverloadPlan(userId, undefined, 5),
+      this.insights.getCoachSnapshot(userId),
     ]);
 
     return {
+      now: new Date().toISOString(),
       windowDays: 30,
       streakWeeks: stats.streak.currentWeeks,
       totalWorkoutDays: stats.streak.totalWorkoutDays,
@@ -158,6 +172,8 @@ export class CoachChatService {
         action: suggestion.action,
         suggested: suggestion.suggested,
       })),
+      recentSessions: snapshot.recentSessions,
+      exercises: snapshot.exercises,
     };
   }
 
@@ -191,9 +207,19 @@ export class CoachChatService {
       system: [
         "You are a strength coach answering questions about one trainee's own training.",
         '',
-        'You are given derived statistics from their log and nothing else — no name,',
-        'no contact details, no identity. You have no tools and no way to look anything',
-        'up. If a question needs a number you were not given, say so.',
+        'You are given figures from their log and nothing else — no name, no contact',
+        'details, no identity. You have no tools and no way to look anything up. If a',
+        'question needs a number you were not given, say so.',
+        '',
+        'What the context holds:',
+        '- `recentSessions`: their latest logged workouts, newest first, with every',
+        '  set (weight in kg, reps, RPE when recorded). `now` is the current time;',
+        '  all timestamps are UTC. A session on the same date as `now` is today.',
+        '- `exercises`: for each exercise, how its estimated one-rep max has moved',
+        '  across the whole log (first, best, last, change in percent, trend).',
+        '- The remaining fields summarise the last `windowDays` days.',
+        '- Only the sessions listed are shown in full. If asked about a workout that',
+        '  is not among them, say it is outside what you can see.',
         '',
         'Rules:',
         '- Every claim must follow from a figure in the context. Never invent a lift,',
