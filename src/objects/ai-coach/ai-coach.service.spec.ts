@@ -7,6 +7,7 @@ import { AnthropicService } from '../../common/anthropic/anthropic.service';
 import { ExerciseService } from '../exercise/exercise.service';
 import { WorkoutStatsService } from '../workout-session/workout-stats.service';
 import { ProgressionService } from '../workout-session/progression.service';
+import { WorkoutInsightsService } from '../workout-session/workout-insights.service';
 
 const USER = new Types.ObjectId().toHexString();
 
@@ -63,6 +64,33 @@ const FATIGUE = {
   baselineSessions: 12,
 };
 
+const SNAPSHOT = {
+  recentSessions: [
+    {
+      performedAt: '2026-11-11T07:30:00.000Z',
+      dayName: 'Push',
+      durationMinutes: 62,
+      exercises: [
+        { name: 'Bench Press', sets: [{ weight: 82.5, reps: 5, rpe: 8 }] },
+      ],
+    },
+  ],
+  exercises: [
+    {
+      name: 'Bench Press',
+      muscleGroup: 'chest',
+      sessions: 9,
+      firstE1rm: 86.3,
+      bestE1rm: 96.3,
+      lastE1rm: 96.3,
+      changePercent: 11.6,
+      trend: 'improving',
+      lastPerformedAt: '2026-11-11',
+      bestSet: { weight: 82.5, reps: 5 },
+    },
+  ],
+};
+
 /** The `n`th argument of a mock's `call`th call, typed for assertions. */
 function argOf(mock: jest.Mock, call = 0, n = 0): Record<string, any> {
   return (mock.mock.calls[call] as unknown[])[n] as Record<string, any>;
@@ -80,6 +108,7 @@ describe('the AI coach', () => {
   let exercises: { search: jest.Mock };
   let stats: { getStats: jest.Mock; getFatigueSignal: jest.Mock };
   let progression: { getOverloadPlan: jest.Mock };
+  let insights: { getCoachSnapshot: jest.Mock };
 
   beforeEach(async () => {
     anthropic = { complete: jest.fn().mockResolvedValue(null), enabled: true };
@@ -101,6 +130,8 @@ describe('the AI coach', () => {
       }),
     };
 
+    insights = { getCoachSnapshot: jest.fn().mockResolvedValue(SNAPSHOT) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CoachChatService,
@@ -109,6 +140,7 @@ describe('the AI coach', () => {
         { provide: ExerciseService, useValue: exercises },
         { provide: WorkoutStatsService, useValue: stats },
         { provide: ProgressionService, useValue: progression },
+        { provide: WorkoutInsightsService, useValue: insights },
       ],
     }).compile();
 
@@ -122,6 +154,39 @@ describe('the AI coach', () => {
   // ─── chat ───────────────────────────────────────────────────
 
   describe('chat', () => {
+    // The context carries the current time, so it is pinned: two questions
+    // must still produce byte-identical context.
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-11-11T10:15:00Z') });
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    /**
+     * The gap this closes: with 30-day aggregates only, "how was today's
+     * workout?" had nothing to answer from. The model needs the session
+     * itself, when it happened, and what "now" is.
+     */
+    it('shows the model the latest sessions and when now is', async () => {
+      const context = await chat.buildContext(USER);
+
+      expect(context.now).toBe('2026-11-11T10:15:00.000Z');
+      expect(context.recentSessions).toEqual(SNAPSHOT.recentSessions);
+      expect(insights.getCoachSnapshot).toHaveBeenCalledWith(USER);
+    });
+
+    it('shows the model how each exercise has moved', async () => {
+      answers({ answer: 'ok', grounded_in: [], insufficient_data: false });
+
+      await chat.ask(USER, 'איך אני מתקדם בלחיצת חזה?');
+
+      const options = argOf(anthropic.complete, 0) as Prompt;
+      expect(options.prompt).toContain('"trend": "improving"');
+      expect(options.prompt).toContain('"changePercent": 11.6');
+      expect(options.system).toContain('recentSessions');
+    });
+
     /**
      * The same guarantee the weekly review set. A question about whether a
      * bench press has stalled does not need to know whose bench it is.

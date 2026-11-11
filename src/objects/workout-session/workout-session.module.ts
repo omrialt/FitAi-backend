@@ -29,6 +29,12 @@ import { ExerciseModule } from '../exercise/exercise.module';
     ProgressionService,
     WorkoutInsightsService,
   ],
-  exports: [WorkoutSessionService, WorkoutStatsService, ProgressionService],
+  exports: [
+    WorkoutSessionService,
+    WorkoutStatsService,
+    ProgressionService,
+    // The coach chat reads recent sessions and per-exercise trends from here.
+    WorkoutInsightsService,
+  ],
 })
 export class WorkoutSessionModule {}

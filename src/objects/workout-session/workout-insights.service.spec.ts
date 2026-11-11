@@ -236,4 +236,114 @@ describe('WorkoutInsightsService', () => {
       expect(result.exercises).toEqual([]);
     });
   });
+
+  /**
+   * What the coach chat is shown. It used to get 30-day aggregates only, so
+   * "how was today's workout?" had nothing to answer from — the model said so,
+   * correctly, and the feature looked broken.
+   */
+  describe('getCoachSnapshot', () => {
+    it('lists the latest sessions newest first, with their sets', async () => {
+      withLog([
+        session('2026-11-01', 'Push', [bench(80)]),
+        session('2026-11-03', 'Legs', [squat(100)]),
+        session('2026-11-05', 'Push', [bench(82.5, 5, { rpe: 8 })], {
+          durationMinutes: 55,
+        }),
+      ]);
+
+      const { recentSessions } = await service.getCoachSnapshot(USER);
+
+      expect(recentSessions.map((s) => s.performedAt)).toEqual([
+        '2026-11-05T12:00:00.000Z',
+        '2026-11-03T12:00:00.000Z',
+        '2026-11-01T12:00:00.000Z',
+      ]);
+      expect(recentSessions[0]).toEqual({
+        performedAt: '2026-11-05T12:00:00.000Z',
+        dayName: 'Push',
+        durationMinutes: 55,
+        exercises: [
+          { name: 'Bench Press', sets: [{ weight: 82.5, reps: 5, rpe: 8 }] },
+        ],
+      });
+    });
+
+    // Bounded, so the prompt does not grow with the length of the log.
+    it('keeps only the five most recent sessions', async () => {
+      withLog(
+        [1, 2, 3, 4, 5, 6, 7].map((day) =>
+          session(`2026-11-0${day}`, 'Push', [bench(80 + day)]),
+        ),
+      );
+
+      const { recentSessions } = await service.getCoachSnapshot(USER);
+
+      expect(recentSessions).toHaveLength(5);
+      expect(recentSessions[0].performedAt).toContain('2026-11-07');
+      expect(recentSessions[4].performedAt).toContain('2026-11-03');
+    });
+
+    it('gives a trend for every exercise, most recently trained first', async () => {
+      withLog([
+        session('2026-10-01', 'Legs', [squat(100)]),
+        session('2026-10-20', 'Push', [bench(80)]),
+        session('2026-11-05', 'Push', [bench(85)]),
+      ]);
+
+      const { exercises } = await service.getCoachSnapshot(USER);
+
+      expect(exercises.map((e) => e.name)).toEqual([
+        'Bench Press',
+        'Back Squat',
+      ]);
+      expect(exercises[0]).toMatchObject({
+        sessions: 2,
+        trend: 'improving',
+        lastPerformedAt: '2026-11-05',
+        bestSet: { weight: 85, reps: 5 },
+      });
+      expect(exercises[0].changePercent).toBeGreaterThan(0);
+      expect(exercises[1]).toMatchObject({ sessions: 1, trend: 'new' });
+    });
+
+    // Notes are free text about someone's body. Numbers go to the model;
+    // sentences do not.
+    it('carries no free-text notes', async () => {
+      withLog([
+        {
+          performedAt: new Date('2026-11-05T12:00:00Z'),
+          dayName: 'Push',
+          notes: 'shoulder hurt today',
+          exercises: [
+            {
+              name: 'Bench Press',
+              notes: 'felt a twinge',
+              sets: [{ weight: 80, reps: 5, notes: 'grinder' }],
+            },
+          ],
+        },
+      ]);
+
+      const snapshot = await service.getCoachSnapshot(USER);
+
+      const sent = JSON.stringify(snapshot);
+      expect(sent).not.toContain('shoulder');
+      expect(sent).not.toContain('twinge');
+      expect(sent).not.toContain('grinder');
+    });
+
+    it('is empty for an empty log and for a malformed id', async () => {
+      withLog([]);
+
+      expect(await service.getCoachSnapshot(USER)).toEqual({
+        recentSessions: [],
+        exercises: [],
+      });
+      expect(await service.getCoachSnapshot('not-an-id')).toEqual({
+        recentSessions: [],
+        exercises: [],
+      });
+    });
+  });
 });

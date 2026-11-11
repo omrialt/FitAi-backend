@@ -89,6 +89,30 @@ export interface ExerciseComparison {
   exercises: ComparedExercise[];
 }
 
+/** One logged session as the coach chat is shown it: numbers, no notes. */
+export interface CoachSession {
+  /** Full timestamp, so "today" can be told from "yesterday evening". */
+  performedAt: string;
+  dayName: string | null;
+  durationMinutes: number | null;
+  exercises: {
+    name: string;
+    sets: {
+      weight: number;
+      reps: number;
+      rpe?: number;
+      drops?: { weight: number; reps: number }[];
+    }[];
+  }[];
+}
+
+export interface CoachSnapshot {
+  /** Newest first. */
+  recentSessions: CoachSession[];
+  /** Most recently trained first. */
+  exercises: ExerciseProgress[];
+}
+
 interface SessionRow {
   performedAt: Date;
   dayName?: string;
@@ -113,6 +137,13 @@ interface DayPoint extends ExerciseComparisonPoint {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How much of the log the coach chat sees. Bounded so the prompt costs the
+ * same for a three-year log as for a three-week one.
+ */
+const COACH_SESSIONS = 5;
+const COACH_EXERCISES = 25;
 
 /**
  * Below this many sessions a trend is a coin toss. "Stalled" needs a run of
@@ -321,6 +352,66 @@ export class WorkoutInsightsService {
       availableMuscleGroups,
       exercises,
     };
+  }
+
+  // ─── coach chat ───────────────────────────────────────────────
+
+  /**
+   * The log as the coach chat needs it: what was actually done lately, and
+   * how each lift has moved.
+   *
+   * The chat was first given 30-day aggregates only. That answers "am I
+   * consistent" and nothing else — asked about today's workout, the model had
+   * no session to look at and said so.
+   *
+   * Sets are copied field by field rather than passed through: the stored
+   * documents carry free-text notes at three levels, and numbers are all that
+   * is meant to leave here.
+   */
+  async getCoachSnapshot(userId: string): Promise<CoachSnapshot> {
+    if (!isValidObjectId(userId)) return { recentSessions: [], exercises: [] };
+
+    const sessions = await this.readLog(userId);
+
+    const recentSessions: CoachSession[] = sessions
+      .slice(-COACH_SESSIONS)
+      .reverse()
+      .map((session) => ({
+        performedAt: new Date(session.performedAt).toISOString(),
+        dayName: session.dayName?.trim() || null,
+        durationMinutes: session.durationMinutes ?? null,
+        exercises: (session.exercises ?? [])
+          .filter((exercise) => exercise.name?.trim())
+          .map((exercise) => ({
+            name: exercise.name.trim(),
+            sets: (exercise.sets ?? []).map((set) => ({
+              weight: set.weight,
+              reps: set.reps,
+              ...(set.rpe != null ? { rpe: set.rpe } : {}),
+              ...(set.drops?.length
+                ? {
+                    drops: set.drops.map((drop) => ({
+                      weight: drop.weight,
+                      reps: drop.reps,
+                    })),
+                  }
+                : {}),
+            })),
+          })),
+      }));
+
+    // The same figures the progress screen shows, so the coach and the charts
+    // cannot disagree about whether a lift is moving.
+    const exercises = this.progressFor(this.dayPoints(sessions))
+      .sort(
+        (a, b) =>
+          b.lastPerformedAt.localeCompare(a.lastPerformedAt) ||
+          b.sessions - a.sessions ||
+          a.name.localeCompare(b.name),
+      )
+      .slice(0, COACH_EXERCISES);
+
+    return { recentSessions, exercises };
   }
 
   // ─── shared ───────────────────────────────────────────────────
