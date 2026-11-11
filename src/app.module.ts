@@ -41,6 +41,7 @@ import { RequestIdMiddleware } from './common/observability/request-id.middlewar
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HealthController } from './common/health/health.controller';
+import { RootController } from './common/health/root.controller';
 import { forgotPasswordLimiter } from './common/middleware/rate-limit';
 
 @Module({
@@ -111,7 +112,7 @@ import { forgotPasswordLimiter } from './common/middleware/rate-limit';
     // client, which the client never sees.
     TrainerNoteModule,
   ],
-  controllers: [HealthController],
+  controllers: [RootController, HealthController],
   providers: [
     {
       provide: APP_FILTER,
