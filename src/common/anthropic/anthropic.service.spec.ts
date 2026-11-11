@@ -183,6 +183,55 @@ describe('AnthropicService', () => {
       expect(service.status.calls).toBe(2);
     });
 
+    // The API answers a schema carrying `maxItems` with a 400, which reached
+    // the user as "transport" on every AI feature. What is sent must be the
+    // cleaned schema; the limit stays with the zod parser.
+    it('never sends a constraint the API rejects', async () => {
+      const service = new AnthropicService();
+      const create = jest.fn().mockResolvedValue(message());
+      stubClient(service, create);
+
+      await service.complete({
+        label: 'test',
+        jsonSchema: {
+          type: 'object',
+          properties: {
+            answer: { type: 'string' },
+            grounded_in: {
+              type: 'array',
+              maxItems: 5,
+              items: { type: 'string' },
+            },
+          },
+          required: ['answer', 'grounded_in'],
+          additionalProperties: false,
+        },
+        parser: schema,
+        system: 's',
+        prompt: 'p',
+      });
+
+      const { output_config } = argOf(create) as {
+        output_config: { format: unknown };
+      };
+      expect(output_config.format).toEqual({
+        type: 'json_schema',
+        schema: {
+          type: 'object',
+          properties: {
+            answer: { type: 'string' },
+            grounded_in: {
+              type: 'array',
+              items: { type: 'string' },
+              description: '{maxItems: 5}',
+            },
+          },
+          required: ['answer', 'grounded_in'],
+          additionalProperties: false,
+        },
+      });
+    });
+
     it('only pays for thinking when asked to', async () => {
       const service = new AnthropicService();
       const create = jest.fn().mockResolvedValue(message());

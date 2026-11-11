@@ -57,7 +57,7 @@ const reviewSchema = z.object({
  * by zod on the way in — belt and braces on the one boundary here that is not
  * deterministic.
  */
-const REVIEW_JSON_SCHEMA = {
+export const REVIEW_JSON_SCHEMA = {
   type: 'object',
   properties: {
     headline: {

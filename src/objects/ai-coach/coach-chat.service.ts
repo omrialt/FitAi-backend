@@ -53,7 +53,7 @@ const answerSchema = z.object({
 
 export type CoachAnswer = z.infer<typeof answerSchema>;
 
-const ANSWER_JSON_SCHEMA = {
+export const ANSWER_JSON_SCHEMA = {
   type: 'object',
   properties: {
     answer: {
