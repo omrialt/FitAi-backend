@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
 import { AiReviewService } from './ai-review.service';
+import { isAiAllowed } from '../../common/anthropic/ai-access';
 
 /**
  * Runs the weekly review for everyone who has trained recently.
@@ -51,6 +52,10 @@ export class AiReviewScheduler {
           .exec();
 
         if (!user || user.isActive === false) continue;
+
+        // The cron spends a call per user, so it honours the same allowlist
+        // as the routes — otherwise it would be the one way around it.
+        if (!isAiAllowed(user.email)) continue;
 
         if (await this.reviews.reviewUser(id, user.email)) written += 1;
       } catch (error) {

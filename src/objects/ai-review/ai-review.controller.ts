@@ -16,6 +16,7 @@ import { AnthropicService } from '../../common/anthropic/anthropic.service';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { assertAiAllowed, isAiAllowed } from '../../common/anthropic/ai-access';
 
 /**
  * Manual trigger for the weekly review.
@@ -46,7 +47,11 @@ export class AiReviewController {
    */
   @Get('status')
   @Roles('user', 'trainer', 'admin')
-  status() {
+  status(@Request() req: AuthRequest) {
+    // Only `enabled`, and only false, for an account outside the allowlist:
+    // the diagnostics below it (`lastError`, token counts) describe the
+    // owner's usage and are nobody else's to read.
+    if (!isAiAllowed(req.user.email)) return { enabled: false };
     return this.anthropic.status;
   }
 
@@ -54,6 +59,8 @@ export class AiReviewController {
   @Roles('user', 'trainer', 'admin')
   @HttpCode(HttpStatus.CREATED)
   async reviewMe(@Request() req: AuthRequest) {
+    assertAiAllowed(req.user.email);
+
     if (!this.reviews.enabled) {
       throw new ServiceUnavailableException(
         'AI review is not configured on this server',

@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Post,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -16,6 +17,8 @@ import { FoodService } from './food.service';
 import { ParseFoodDto, SearchFoodDto } from '../../interfaces/food.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { isAiAllowed } from '../../common/anthropic/ai-access';
+import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
 /**
  * Nutrition facts are public reference content, like the exercise catalogue,
@@ -38,10 +41,11 @@ export class FoodController {
    */
   @Get('status')
   @Roles('user', 'trainer', 'admin')
-  status() {
+  status(@Request() req: AuthRequest) {
     return {
+      // Search is a database lookup with no model behind it: open to all.
       search: this.foods.searchAvailable,
-      parse: this.foods.parseAvailable,
+      parse: isAiAllowed(req.user.email) && this.foods.parseAvailable,
     };
   }
 
@@ -61,7 +65,10 @@ export class FoodController {
   @Post('parse')
   @Roles('user', 'trainer', 'admin')
   @HttpCode(HttpStatus.OK)
-  parse(@Body() body: ParseFoodDto) {
+  parse(@Body() body: ParseFoodDto, @Request() req: AuthRequest) {
+    // Same shape as "not configured", for the same reason: the fallback is
+    // the manual editor, and this must not spend a model call.
+    if (!isAiAllowed(req.user.email)) return { items: [], available: false };
     return this.foods.parse(body.text);
   }
 }
