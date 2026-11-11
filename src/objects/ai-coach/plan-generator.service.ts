@@ -60,7 +60,7 @@ const generatedPlanSchema = z.object({
 
 export type GeneratedPlan = z.infer<typeof generatedPlanSchema>;
 
-const PLAN_JSON_SCHEMA = {
+export const PLAN_JSON_SCHEMA = {
   type: 'object',
   properties: {
     title: { type: 'string', description: 'A short name for the programme.' },

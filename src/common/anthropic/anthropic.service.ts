@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import type { ZodSchema } from 'zod';
+import { toApiSchema } from './api-schema';
 
 /**
  * The one Anthropic client in the application.
@@ -160,7 +161,12 @@ export class AnthropicService {
           : {}),
         output_config: {
           effort: options.effort ?? 'medium',
-          format: { type: 'json_schema', schema: options.jsonSchema },
+          // Not the schema as written: the API rejects the limits these
+          // carry, and `parser` below is what enforces them.
+          format: {
+            type: 'json_schema',
+            schema: toApiSchema(options.jsonSchema),
+          },
         },
         system: options.system,
         messages: [{ role: 'user', content: options.prompt }],

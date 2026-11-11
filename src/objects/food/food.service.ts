@@ -65,7 +65,7 @@ const parsedItemsSchema = z.object({
     .max(15),
 });
 
-const PARSE_JSON_SCHEMA = {
+export const PARSE_JSON_SCHEMA = {
   type: 'object',
   properties: {
     items: {
