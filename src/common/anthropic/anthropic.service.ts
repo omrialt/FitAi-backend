@@ -29,7 +29,12 @@ import type { ZodSchema } from 'zod';
 /** Adaptive thinking is worth its cost on advice; not on a lookup. */
 export type Effort = 'low' | 'medium' | 'high';
 
-export const DEFAULT_MODEL = 'claude-opus-5';
+/**
+ * The smallest current model, for every feature: the calls here are structured
+ * extraction and short advice over data the server already computed, and this
+ * is the one constant that decides what each of them costs.
+ */
+export const DEFAULT_MODEL = 'claude-haiku-5-5';
 
 export interface CompleteOptions<T> {
   /** Constrains the model on the way out. Same shape as JSON Schema. */

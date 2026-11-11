@@ -24,6 +24,7 @@ import {
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { assertAiAllowed, isAiAllowed } from '../../common/anthropic/ai-access';
 
 /**
  * Both routes act on the caller and only the caller. There is no `:userId`
@@ -43,14 +44,22 @@ export class AiCoachController {
   /** Lets the client hide both features rather than offer buttons that 503. */
   @Get('status')
   @Roles('user', 'trainer', 'admin')
-  status() {
-    return { chat: this.chat.enabled, planGeneration: this.generator.enabled };
+  status(@Request() req: AuthRequest) {
+    // Reported as off rather than forbidden: the client hides the buttons on
+    // `false`, which is exactly what an account outside the allowlist needs.
+    const allowed = isAiAllowed(req.user.email);
+    return {
+      chat: allowed && this.chat.enabled,
+      planGeneration: allowed && this.generator.enabled,
+    };
   }
 
   @Post('chat')
   @Roles('user', 'trainer', 'admin')
   @HttpCode(HttpStatus.OK)
   async ask(@Body() body: CoachChatDto, @Request() req: AuthRequest) {
+    assertAiAllowed(req.user.email);
+
     if (!this.chat.enabled) {
       throw new ServiceUnavailableException(
         'The coach is not configured on this server',
@@ -90,6 +99,8 @@ export class AiCoachController {
     @Body() body: GeneratePlanDto,
     @Request() req: AuthRequest,
   ) {
+    assertAiAllowed(req.user.email);
+
     if (!this.generator.enabled) {
       throw new ServiceUnavailableException(
         'Plan generation is not configured on this server',

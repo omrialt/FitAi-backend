@@ -177,7 +177,7 @@ describe('AiReviewService', () => {
         Record<string, unknown>,
       ];
       expect(doc.generatedBy).toBe('ai');
-      expect(doc.aiModelUsed).toBe('claude-opus-5');
+      expect(doc.aiModelUsed).toBe('claude-haiku-5-5');
       expect((doc.metadata as { tokensUsed: number }).tokensUsed).toBe(1234);
       expect(doc.content).toContain('שבוע יציב');
       expect(mailer.sendWeeklyReview).toHaveBeenCalledWith(
