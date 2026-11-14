@@ -22,6 +22,13 @@ import {
 } from 'date-fns';
 import { getIdString } from '../../utils/helpers';
 
+/**
+ * The Google credentials are `select: false` on the user schema (SEC-01), so
+ * every query here that needs them opts back in explicitly.
+ */
+export const GOOGLE_TOKEN_SELECT =
+  '+googleCalendar.accessToken +googleCalendar.refreshToken';
+
 @Injectable()
 export class CalendarSyncService {
   private readonly logger = new Logger(CalendarSyncService.name);
@@ -41,7 +48,10 @@ export class CalendarSyncService {
     userId: string,
     weekStart?: Date,
   ): Promise<SyncedCalendarEvent[]> {
-    const user = await this.userModel.findById(userId).exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select(GOOGLE_TOKEN_SELECT)
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -371,7 +381,10 @@ export class CalendarSyncService {
     trainingPlanId: string,
     referenceDate?: Date,
   ): Promise<{ created: number; updated: number; deleted: number }> {
-    const user = await this.userModel.findById(userId).exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select(GOOGLE_TOKEN_SELECT)
+      .exec();
     if (!user || !user.googleCalendar?.accessToken) {
       throw new NotFoundException(
         'User not found or Google Calendar not connected',
@@ -503,6 +516,7 @@ export class CalendarSyncService {
         'googleCalendar.connected': true,
         'googleCalendar.refreshToken': { $exists: true, $ne: null },
       })
+      .select(GOOGLE_TOKEN_SELECT)
       .exec();
 
     let succeeded = 0;
@@ -546,7 +560,10 @@ export class CalendarSyncService {
    */
   async syncUserIfConnected(userId: string): Promise<void> {
     try {
-      const user = await this.userModel.findById(userId).exec();
+      const user = await this.userModel
+        .findById(userId)
+        .select(GOOGLE_TOKEN_SELECT)
+        .exec();
       if (
         !user?.googleCalendar?.connected ||
         !user.googleCalendar.accessToken ||

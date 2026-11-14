@@ -22,6 +22,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_ACCESS_SECRET!,
+      // Pinned algorithm (SEC-12): never let the token header choose it.
+      algorithms: ['HS256'],
       // Needed to reach the raw bearer token, which is what the blacklist is
       // keyed on. Without it this strategy cannot tell a live token from one
       // that was revoked at logout.

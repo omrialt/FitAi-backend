@@ -8,6 +8,7 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { CalendarSyncService } from './calendar-sync.service';
+import { safeEqual } from '../../utils/secure-compare';
 
 /**
  * HTTP-triggered equivalent of CalendarSyncScheduler.
@@ -38,7 +39,8 @@ export class CalendarSyncCronController {
       this.logger.error('CRON_SECRET is not set; refusing to run.');
       throw new UnauthorizedException();
     }
-    if (authorization !== `Bearer ${secret}`) {
+    // Constant-time (SEC-11): `!==` leaks how much of a guess matched.
+    if (!safeEqual(authorization, `Bearer ${secret}`)) {
       this.logger.warn('Rejected a cron request with a bad or missing secret.');
       throw new UnauthorizedException();
     }

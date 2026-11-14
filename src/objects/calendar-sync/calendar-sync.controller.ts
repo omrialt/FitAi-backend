@@ -19,6 +19,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { UserDocument } from '../user/user.schema';
 import { ConfigService } from '@nestjs/config';
+import { AuthCodeService } from '../auth/auth-code.service';
 
 @Controller('calendar-sync')
 export class CalendarSyncController {
@@ -30,6 +31,7 @@ export class CalendarSyncController {
     private readonly configService: ConfigService,
     @InjectModel('User')
     private userModel: Model<UserDocument>,
+    private readonly authCodes: AuthCodeService,
   ) {}
 
   /**
@@ -37,15 +39,17 @@ export class CalendarSyncController {
    */
   @Get('google/auth-url')
   @UseGuards(JwtAuthGuard)
-  getGoogleAuthUrl(@Req() req: express.Request) {
+  async getGoogleAuthUrl(@Req() req: express.Request) {
     const userId = req.user?.['id'] as string;
-    const authUrl = this.googleCalendarService.getAuthUrl(userId);
+    // An opaque single-use state, not the user id (SEC-02).
+    const state = await this.authCodes.issueCalendarState(userId);
+    const authUrl = this.googleCalendarService.getAuthUrl(state);
     return { authUrl };
   }
 
   /**
    * Handle Google OAuth callback - called by Google, no JWT auth
-   * Google redirects here with ?code=...&state=userId
+   * Google redirects here with ?code=...&state=<single-use state>
    */
   @Get('google/callback')
   async handleGoogleCallback(
@@ -64,7 +68,13 @@ export class CalendarSyncController {
     }
 
     try {
-      const userId = state;
+      const userId = await this.authCodes.redeemCalendarState(state);
+      if (!userId) {
+        this.logger.warn('Rejected a calendar callback with an unknown state');
+        return res.redirect(
+          `${frontendUrl}/schedule?calendar_error=invalid_state`,
+        );
+      }
 
       // Exchange code for tokens
       const tokens = await this.googleCalendarService.getTokensFromCode(code);
@@ -102,7 +112,10 @@ export class CalendarSyncController {
   @UseGuards(JwtAuthGuard)
   async getConnectionStatus(@Req() req: express.Request) {
     const userId = req.user?.['id'] as string;
-    const user = await this.userModel.findById(userId).exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select('+googleCalendar.refreshToken')
+      .exec();
 
     return {
       connected: !!user?.googleCalendar?.connected,

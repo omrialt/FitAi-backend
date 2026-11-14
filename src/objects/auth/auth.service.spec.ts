@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import {
+  BadRequestException,
   Logger,
   ForbiddenException,
   UnauthorizedException,
@@ -12,6 +13,8 @@ import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { AuthCodeService } from './auth-code.service';
+import { decodeOAuthState } from './oauth-state';
+import { hashToken } from '../../utils/secure-compare';
 
 /**
  * A stand-in for a Mongoose query: awaitable on its own (`await findById(id)`)
@@ -38,6 +41,7 @@ describe('AuthService', () => {
     register: jest.Mock;
     rotate: jest.Mock;
     revokeFamily: jest.Mock;
+    revokeAllForUser: jest.Mock;
   };
   let authCodeService: { issue: jest.Mock; redeem: jest.Mock };
 
@@ -98,6 +102,7 @@ describe('AuthService', () => {
         nextJti: 'jti-2',
       }),
       revokeFamily: jest.fn().mockResolvedValue(undefined),
+      revokeAllForUser: jest.fn().mockResolvedValue(0),
     };
     authCodeService = {
       issue: jest.fn().mockResolvedValue('a'.repeat(64)),
@@ -167,6 +172,15 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    // SEC-10: "use Google" would confirm the account exists and how it signs in.
+    it('answers a Google-only account exactly like a wrong password', async () => {
+      withUser({ ...(await account(true)), password: undefined });
+
+      await expect(
+        service.login({ email: 'athlete@example.com', password: 'x' }),
+      ).rejects.toThrow('Invalid credentials');
+    });
+
     it('lets a verified account through', async () => {
       withUser(await account(true));
 
@@ -194,20 +208,24 @@ describe('AuthService', () => {
       expect(nodemailerService.sendResetEmail).not.toHaveBeenCalled();
     });
 
-    it('stores a reset token with an expiry and emails it', async () => {
+    it('stores a digest of the reset token and emails the raw token', async () => {
       const user = buildUser();
       userModel.findOne.mockResolvedValue(user);
 
       await service.forgotPassword(user.email);
 
-      expect(user.resetPasswordToken).toEqual(expect.any(String));
       expect(user.resetPasswordExpires).toBeInstanceOf(Date);
       expect(user.resetPasswordExpires!.getTime()).toBeGreaterThan(Date.now());
       expect(user.save).toHaveBeenCalled();
-      expect(nodemailerService.sendResetEmail).toHaveBeenCalledWith(
-        user.email,
-        user.resetPasswordToken,
-      );
+
+      // SEC-05: the database holds sha256(token), never the mailed value.
+      const [, mailed] = nodemailerService.sendResetEmail.mock.calls[0] as [
+        string,
+        string,
+      ];
+      expect(mailed).toMatch(/^[0-9a-f]{64}$/);
+      expect(user.resetPasswordToken).toBe(hashToken(mailed));
+      expect(user.resetPasswordToken).not.toBe(mailed);
     });
 
     it('issues a distinct token per request', async () => {
@@ -387,6 +405,85 @@ describe('AuthService', () => {
         expect.any(Date),
         'user-1',
       );
+    });
+  });
+
+  describe('resetPassword', () => {
+    const resettable = () => ({
+      _id: { toString: () => 'user-1' },
+      password: 'old-hash',
+      resetPasswordToken: 'digest' as string | undefined,
+      resetPasswordExpires: new Date(Date.now() + 1000) as Date | undefined,
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    it('looks the token up by its digest, never the raw value', async () => {
+      const user = resettable();
+      userModel.findOne.mockReturnValue(query(user));
+
+      await service.resetPassword('raw-token', 'N3w-Passw0rd!');
+
+      expect(userModel.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ resetPasswordToken: hashToken('raw-token') }),
+      );
+      expect(user.resetPasswordToken).toBeUndefined();
+    });
+
+    it('ends every existing session after the password changes', async () => {
+      userModel.findOne.mockReturnValue(query(resettable()));
+
+      await service.resetPassword('raw-token', 'N3w-Passw0rd!');
+
+      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith(
+        'user-1',
+      );
+    });
+
+    it('rejects an unknown token', async () => {
+      userModel.findOne.mockReturnValue(query(null));
+      await expect(
+        service.resetPassword('nope', 'N3w-Passw0rd!'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('Google sign-in', () => {
+    const NONCE = 'n'.repeat(43);
+
+    it('always sends the browser-bound state and never asks for offline access', () => {
+      process.env.GOOGLE_CLIENT_ID = 'client';
+      const url = new URL(service.getGoogleAuthUrl({ nonce: NONCE }));
+
+      expect(decodeOAuthState(url.searchParams.get('state'))).toEqual({
+        nonce: NONCE,
+      });
+      expect(url.searchParams.has('access_type')).toBe(false);
+    });
+
+    it('refuses a Google profile whose email Google has not verified', async () => {
+      process.env.GOOGLE_CLIENT_ID = 'client';
+      process.env.GOOGLE_CLIENT_SECRET = 'secret';
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ access_token: 'at' }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              email: 'victim@example.com',
+              verified_email: false,
+            }),
+        } as Response);
+
+      await expect(service.handleGoogleCallback('code')).rejects.toThrow(
+        /not verified/,
+      );
+      // Never reached the account lookup, so nothing could be linked.
+      expect(userModel.findOne).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 

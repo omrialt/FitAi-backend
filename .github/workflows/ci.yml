@@ -30,6 +30,14 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Fail on known critical advisories in runtime dependencies (security:
+      # SEC-04). `critical` rather than `high` until zod 3 -> 4 lands: the only
+      # remaining high advisory is zod's oversized-input DoS (bounded here by
+      # the 100kb body limit), and @anatine / @zodyac pin zod 3. Raise this to
+      # `high` with that migration.
+      - name: Audit
+        run: npm audit --omit=dev --audit-level=critical
+
       # Not `npm run lint`: that script passes --fix, which would "pass" by
       # rewriting the working tree instead of reporting anything.
       #
