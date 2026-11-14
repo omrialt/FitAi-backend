@@ -36,6 +36,7 @@ import { AuthCodeService } from './auth-code.service';
     AuthService,
     TokenBlacklistService,
     RefreshTokenService,
+    AuthCodeService,
     JwtStrategy,
     PassportModule,
   ],

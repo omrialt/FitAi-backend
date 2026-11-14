@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserController } from './user.controller';
 import type { UserService } from './user.service';
 import type { AccountService } from '../account/account.service';
+import type { RefreshTokenService } from '../auth/refresh-token.service';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 
 const SELF = '507f1f77bcf86cd799439011';
@@ -14,19 +15,29 @@ function requestFor(id: string, role: string): AuthRequest {
 }
 
 describe('UserController', () => {
-  let userService: { findOne: jest.Mock; update: jest.Mock };
+  let userService: {
+    findOne: jest.Mock;
+    findOneFor: jest.Mock;
+    findAllFor: jest.Mock;
+    update: jest.Mock;
+  };
   let accountService: { deleteAccount: jest.Mock };
+  let refreshTokens: { revokeAllForUser: jest.Mock };
   let controller: UserController;
 
   beforeEach(() => {
     userService = {
       findOne: jest.fn().mockResolvedValue({ _id: SELF }),
+      findOneFor: jest.fn().mockResolvedValue({ _id: SELF }),
+      findAllFor: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({ _id: SELF }),
     };
     accountService = { deleteAccount: jest.fn().mockResolvedValue(undefined) };
+    refreshTokens = { revokeAllForUser: jest.fn().mockResolvedValue(0) };
     controller = new UserController(
       userService as unknown as UserService,
       accountService as unknown as AccountService,
+      refreshTokens as unknown as RefreshTokenService,
     );
   });
 
@@ -93,15 +104,17 @@ describe('UserController', () => {
     it.each(['me', 'profile', 'not-an-id'])(
       'answers 400 for the unusable id %p instead of reaching Mongo',
       (id) => {
-        expect(() => controller.findOne(id)).toThrow(BadRequestException);
-        expect(userService.findOne).not.toHaveBeenCalled();
+        expect(() => controller.findOne(id, requestFor(SELF, 'user'))).toThrow(
+          BadRequestException,
+        );
+        expect(userService.findOneFor).not.toHaveBeenCalled();
       },
     );
 
-    it('rejects a malformed id on PATCH before the ownership check', () => {
-      expect(() =>
+    it('rejects a malformed id on PATCH before the ownership check', async () => {
+      await expect(
         controller.update('me', { name: 'x' }, requestFor(SELF, 'user')),
-      ).toThrow(BadRequestException);
+      ).rejects.toThrow(BadRequestException);
       expect(userService.update).not.toHaveBeenCalled();
     });
 
@@ -110,10 +123,10 @@ describe('UserController', () => {
       expect(accountService.deleteAccount).not.toHaveBeenCalled();
     });
 
-    it('still refuses to let a user patch someone else', () => {
-      expect(() =>
+    it('still refuses to let a user patch someone else', async () => {
+      await expect(
         controller.update(OTHER, { name: 'x' }, requestFor(SELF, 'user')),
-      ).toThrow(ForbiddenException);
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('still lets an admin patch anyone, privileged fields included', async () => {
@@ -125,6 +138,43 @@ describe('UserController', () => {
       expect(userService.update).toHaveBeenCalledWith(OTHER, {
         role: 'trainer',
       });
+    });
+
+    // SEC-15: the role lives in token claims, so changing it ends sessions.
+    it('ends the sessions of a user whose role an admin changed', async () => {
+      await controller.update(
+        OTHER,
+        { role: 'user' } as never,
+        requestFor(SELF, 'admin'),
+      );
+      expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith(OTHER);
+    });
+
+    it('leaves sessions alone for an edit that does not touch the role', async () => {
+      await controller.update(
+        OTHER,
+        { name: 'x' } as never,
+        requestFor(SELF, 'admin'),
+      );
+      expect(refreshTokens.revokeAllForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  // SEC-01: the directory is scoped by the caller, never the raw collection.
+  describe('directory reads', () => {
+    it('passes the caller to the list so the service can cut fields', async () => {
+      await controller.findAll(requestFor(SELF, 'user'));
+      expect(userService.findAllFor).toHaveBeenCalledWith(
+        expect.objectContaining({ id: SELF, role: 'user' }),
+      );
+    });
+
+    it('passes the caller to a single-user read', async () => {
+      await controller.findOne(OTHER, requestFor(SELF, 'trainer'));
+      expect(userService.findOneFor).toHaveBeenCalledWith(
+        OTHER,
+        expect.objectContaining({ id: SELF, role: 'trainer' }),
+      );
     });
 
     it('still strips privileged fields when a user patches their own id', async () => {

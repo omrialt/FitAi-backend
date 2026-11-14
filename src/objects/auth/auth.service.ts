@@ -13,6 +13,7 @@ import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import { NodemailerService } from '../../common/nodemailer/nodemailer.service';
 import { randomBytes } from 'crypto';
+import { hashToken } from '../../utils/secure-compare';
 import type { User } from '../user/user.schema';
 import {
   LoginDto,
@@ -30,6 +31,9 @@ import {
   verifierMatches,
   type OAuthState,
 } from './oauth-state';
+
+/** Pin the signing algorithm (SEC-12) rather than trusting the token header. */
+const JWT_ALGORITHMS: jwt.Algorithm[] = ['HS256'];
 
 @Injectable()
 export class AuthService {
@@ -80,8 +84,10 @@ export class AuthService {
     }
 
     // Check if user has password (Google OAuth users don't have passwords)
+    // Same answer as a wrong password (SEC-10): "use Google" would confirm
+    // that the address has an account, and which provider it uses.
     if (!user.password) {
-      throw new UnauthorizedException('Please login with Google');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     // Verify password
@@ -126,7 +132,11 @@ export class AuthService {
     // Check if user already exists
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
-      throw new BadRequestException('User with this email already exists');
+      // Deliberately vague (SEC-10). Signup cannot hide existence entirely
+      // without changing the flow, so this endpoint stays rate-limited too.
+      throw new BadRequestException(
+        'Unable to register with this email address',
+      );
     }
 
     // Hash password
@@ -139,7 +149,8 @@ export class AuthService {
       password: hashedPassword,
       ...userData,
       emailVerified: false,
-      emailVerificationToken: verification.token,
+      // Digest only (SEC-05); the raw token goes out in the email below.
+      emailVerificationToken: hashToken(verification.token),
       emailVerificationExpires: verification.expiresAt,
     });
 
@@ -185,7 +196,9 @@ export class AuthService {
       try {
         // Verify the token to extract user information
         const secret = process.env.JWT_ACCESS_SECRET!;
-        const payload = jwt.verify(token, secret) as {
+        const payload = jwt.verify(token, secret, {
+          algorithms: JWT_ALGORITHMS,
+        }) as {
           userId: string;
           email: string;
           fid?: string;
@@ -242,7 +255,9 @@ export class AuthService {
 
     let payload: { userId: string; email: string; fid?: string; jti?: string };
     try {
-      payload = jwt.verify(refreshToken, secret) as typeof payload;
+      payload = jwt.verify(refreshToken, secret, {
+        algorithms: JWT_ALGORITHMS,
+      }) as typeof payload;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -311,10 +326,10 @@ export class AuthService {
   /**
    * Get Google OAuth URL
    *
-   * `state` is set only for the Android app (see `oauth-state.ts`); the web
-   * flow sends none and comes back exactly as before.
+   * `state` always carries the browser-bound nonce (SEC-06), plus the PKCE
+   * challenge for the Android app (see `oauth-state.ts`).
    */
-  getGoogleAuthUrl(state?: OAuthState): string {
+  getGoogleAuthUrl(state: OAuthState): string {
     const clientId = process.env.GOOGLE_CLIENT_ID!;
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
     const redirectUri = `${backendUrl}/auth/google/callback`;
@@ -326,10 +341,9 @@ export class AuthService {
     googleAuthUrl.searchParams.append('redirect_uri', redirectUri);
     googleAuthUrl.searchParams.append('response_type', 'code');
     googleAuthUrl.searchParams.append('scope', 'email profile');
-    googleAuthUrl.searchParams.append('access_type', 'offline');
-    if (state) {
-      googleAuthUrl.searchParams.append('state', encodeOAuthState(state));
-    }
+    // No `access_type=offline`: sign-in only reads the profile once, so a
+    // long-lived Google refresh token would be a credential kept for nothing.
+    googleAuthUrl.searchParams.append('state', encodeOAuthState(state));
 
     return googleAuthUrl.toString();
   }
@@ -392,6 +406,7 @@ export class AuthService {
 
       const profile = (await profileResponse.json()) as {
         email?: string;
+        verified_email?: boolean;
         name?: string;
         picture?: string;
       };
@@ -399,6 +414,14 @@ export class AuthService {
 
       if (!email) {
         throw new BadRequestException('Email not provided by Google');
+      }
+
+      // SEC-03: the address below is linked to any existing account that has
+      // it, and marked verified. A Google account can hold an address it never
+      // proved it owns, so without this check that was a way into someone
+      // else's FitAi account.
+      if (profile.verified_email !== true) {
+        throw new UnauthorizedException('Google account email is not verified');
       }
 
       // Check if user exists
@@ -569,8 +592,8 @@ export class AuthService {
 
     // Generate a secure reset token
     const token = randomBytes(32).toString('hex');
-    // Optionally: Save token and expiry to user document for later verification
-    user.resetPasswordToken = token;
+    // Digest only (SEC-05): the raw token exists in the email and nowhere else.
+    user.resetPasswordToken = hashToken(token);
     user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour expiry
     await user.save();
 
@@ -598,10 +621,10 @@ export class AuthService {
     // Find user by reset token and check expiry
     const user = await this.userModel
       .findOne({
-        resetPasswordToken: token,
+        resetPasswordToken: hashToken(token),
         resetPasswordExpires: { $gt: new Date() },
       })
-      .select('+password');
+      .select('+password +resetPasswordToken +resetPasswordExpires');
 
     if (!user) {
       throw new BadRequestException('Invalid or expired password reset token');
@@ -614,6 +637,10 @@ export class AuthService {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
+
+    // A reset is what someone does when they think the account is
+    // compromised, so every existing session ends with the old password.
+    await this.refreshTokenService.revokeAllForUser(user._id.toString());
   }
 
   /**
@@ -629,7 +656,7 @@ export class AuthService {
     }
 
     const user = await this.userModel
-      .findOne({ emailVerificationToken: token })
+      .findOne({ emailVerificationToken: hashToken(token) })
       .select('+emailVerificationToken +emailVerificationExpires');
 
     if (!user) {
@@ -689,7 +716,7 @@ export class AuthService {
     }
 
     const verification = this.createVerificationToken();
-    user.emailVerificationToken = verification.token;
+    user.emailVerificationToken = hashToken(verification.token);
     user.emailVerificationExpires = verification.expiresAt;
     await user.save();
 

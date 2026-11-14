@@ -8,6 +8,7 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { HealthProbeService, type ProbeResult } from './health-probe.service';
+import { safeEqual } from '../../utils/secure-compare';
 
 /**
  * Runs the health probes on a schedule.
@@ -36,7 +37,8 @@ export class MonitorCronController {
       this.logger.error('CRON_SECRET is not set; refusing to run.');
       throw new UnauthorizedException();
     }
-    if (authorization !== `Bearer ${secret}`) {
+    // Constant-time (SEC-11): `!==` leaks how much of a guess matched.
+    if (!safeEqual(authorization, `Bearer ${secret}`)) {
       this.logger.warn(
         'Rejected a monitor request with a bad or missing secret.',
       );

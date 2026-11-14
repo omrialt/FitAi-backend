@@ -116,8 +116,12 @@ export async function createApp(): Promise<INestApplication> {
       [
         ...(process.env.CORS_ORIGINS?.split(',') ?? []),
         process.env.FRONTEND_URL,
-        'http://localhost:5173',
-        'http://localhost:3000',
+        // Dev servers only outside production (SEC-13): any page served from
+        // a developer's localhost would otherwise be a trusted origin for
+        // the production API.
+        ...(process.env.NODE_ENV === 'production'
+          ? []
+          : ['http://localhost:5173', 'http://localhost:3000']),
         'https://localhost',
       ]
         .map((o) => o?.trim())

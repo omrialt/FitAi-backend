@@ -23,6 +23,7 @@ import type { AuthRequest } from '../../interfaces/jwt.interfaces';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AccountService } from '../account/account.service';
+import { RefreshTokenService } from '../auth/refresh-token.service';
 
 /**
  * Fields on UpdateUserDto that decide what an account *is*, rather than what it
@@ -68,6 +69,7 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly accountService: AccountService,
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
   @Post()
@@ -79,8 +81,8 @@ export class UserController {
 
   @Get()
   @Roles('user', 'trainer', 'admin')
-  findAll() {
-    return this.userService.findAll();
+  findAll(@Request() req: AuthRequest) {
+    return this.userService.findAllFor(req.user);
   }
 
   /**
@@ -112,14 +114,14 @@ export class UserController {
 
   @Get(':id')
   @Roles('user', 'trainer', 'admin')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string, @Request() req: AuthRequest) {
     assertObjectId(id);
-    return this.userService.findOne(id);
+    return this.userService.findOneFor(id, req.user);
   }
 
   @Patch(':id')
   @Roles('user', 'trainer', 'admin')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @Request() req: AuthRequest,
@@ -135,7 +137,17 @@ export class UserController {
       ? updateUserDto
       : stripSelfServiceFields(updateUserDto);
 
-    return this.userService.update(id, payload);
+    const updated = await this.userService.update(id, payload);
+
+    // The role rides in the token claims, so a demotion would otherwise keep
+    // its old powers for as long as the session kept refreshing (SEC-15).
+    // Ending every session forces a fresh sign-in under the new role; the
+    // outstanding access token still lives out its 15 minutes.
+    if (isAdmin && updateUserDto.role !== undefined) {
+      await this.refreshTokens.revokeAllForUser(id);
+    }
+
+    return updated;
   }
 
   /**

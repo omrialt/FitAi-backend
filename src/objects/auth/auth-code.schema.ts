@@ -17,12 +17,20 @@ import { Schema, HydratedDocument, Model } from 'mongoose';
  * No tokens are stored here — the exchange endpoint mints them at redemption
  * time, so a code sitting unredeemed is not a token waiting to be stolen.
  */
+/**
+ * What a code may be redeemed for. `calendar` codes are the OAuth `state` of
+ * the Google Calendar connect flow (SEC-02); they travel through Google's URL,
+ * so they must never be redeemable as a sign-in at `/auth/google/exchange`.
+ */
+export type AuthCodePurpose = 'login' | 'calendar';
+
 export interface AuthCode {
   codeHash: string;
   userId: string;
   needsProfile: boolean;
   /** PKCE S256 challenge, for codes issued to the Android app. */
   codeChallenge?: string;
+  purpose?: AuthCodePurpose;
   expiresAt: Date;
   createdAt?: Date;
 }
@@ -46,6 +54,11 @@ export const AuthCodeSchema = new Schema(
     codeChallenge: {
       type: String,
       required: false,
+    },
+    purpose: {
+      type: String,
+      enum: ['login', 'calendar'],
+      default: 'login',
     },
     expiresAt: {
       type: Date,

@@ -82,8 +82,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (error.code === 11000) {
         status = HttpStatus.CONFLICT;
         message = 'Duplicate key error';
-        details = error.message;
+        // Not the driver message (SEC-07): it names the index and echoes the
+        // duplicated value, an email address for instance.
+        details = null;
       }
+    }
+
+    // An error nobody turned into an HttpException is a bug, and its message
+    // is internal: a cast failure, a driver error, a file path (SEC-07). The
+    // client gets a generic line plus the request id; the log keeps the rest.
+    // Deliberate 5xx HttpExceptions keep their message, since those are
+    // written for the caller.
+    if (
+      Number(status) >= Number(HttpStatus.INTERNAL_SERVER_ERROR) &&
+      !(error instanceof HttpException)
+    ) {
+      message = 'Internal server error';
+      details = null;
     }
 
     const requestId = getRequestId(request);

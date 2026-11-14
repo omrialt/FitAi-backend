@@ -33,6 +33,9 @@ import {
 import {
   ANDROID_REDIRECT_BASE,
   decodeOAuthState,
+  newOAuthNonce,
+  nonceMatches,
+  OAUTH_NONCE_COOKIE,
   type OAuthState,
 } from './oauth-state';
 import type {
@@ -49,6 +52,16 @@ import type {
   GoogleExchangeDto,
 } from '../../interfaces/auth.interfaces';
 import type { AuthRequest } from '../../interfaces/jwt.interfaces';
+
+/** Short-lived, script-proof, and only sent back to the OAuth endpoints. */
+const OAUTH_NONCE_COOKIE_OPTIONS: express.CookieOptions = {
+  httpOnly: true,
+  sameSite: 'lax',
+  // Secure only where there is TLS; on http://localhost it would be dropped.
+  secure: process.env.NODE_ENV === 'production',
+  path: '/auth/google',
+  maxAge: 10 * 60 * 1000,
+};
 
 /**
  * Where the Google callback sends the browser: the website, or — for a
@@ -130,10 +143,16 @@ export class AuthController {
     query: { platform?: 'android'; challenge?: string },
     @Res() res: express.Response,
   ) {
-    const state =
+    // Bind this sign-in to this browser (SEC-06): the callback only accepts a
+    // state whose nonce matches this cookie. Lax so it survives the top-level
+    // redirect back from accounts.google.com; scoped to the two OAuth paths.
+    const nonce = newOAuthNonce();
+    res.cookie(OAUTH_NONCE_COOKIE, nonce, OAUTH_NONCE_COOKIE_OPTIONS);
+
+    const state: OAuthState =
       query.platform === 'android' && query.challenge
-        ? { platform: 'android' as const, challenge: query.challenge }
-        : undefined;
+        ? { nonce, platform: 'android', challenge: query.challenge }
+        : { nonce };
     res.redirect(this.authService.getGoogleAuthUrl(state));
   }
 
@@ -148,9 +167,29 @@ export class AuthController {
     const code = req.query.code as string;
     const error = req.query.error as string;
     const state = decodeOAuthState(req.query.state);
+    const cookieNonce: unknown = (req.cookies as Record<string, unknown>)?.[
+      OAUTH_NONCE_COOKIE
+    ];
+    // Single use whatever happens next.
+    res.clearCookie(OAUTH_NONCE_COOKIE, OAUTH_NONCE_COOKIE_OPTIONS);
 
     if (error) {
-      return res.redirect(oauthRedirect(state, '/login', { error }));
+      // Only Google's "user said no" is passed on verbatim; anything else is
+      // reduced to a fixed code so the query string never carries free text.
+      return res.redirect(
+        oauthRedirect(state, '/login', {
+          error: error === 'access_denied' ? 'access_denied' : 'oauth_failed',
+        }),
+      );
+    }
+
+    if (!nonceMatches(state, cookieNonce)) {
+      this.logger.warn(
+        'Rejected a Google callback whose state nonce did not match',
+      );
+      return res.redirect(
+        oauthRedirect(state, '/login', { error: 'invalid_state' }),
+      );
     }
 
     if (!code) {
@@ -187,8 +226,10 @@ export class AuthController {
         `Google OAuth authentication failed: ${errorMessage}`,
         error instanceof Error ? error.stack : undefined,
       );
+      // A fixed code, not the message (SEC-07): internal errors must not end
+      // up in a URL, browser history and every log on the way.
       return res.redirect(
-        oauthRedirect(state, '/login', { error: errorMessage }),
+        oauthRedirect(state, '/login', { error: 'oauth_failed' }),
       );
     }
   }

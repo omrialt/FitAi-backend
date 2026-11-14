@@ -2,6 +2,7 @@ import {
   ArgumentsHost,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { GlobalExceptionFilter } from './global-exception.filter';
 
@@ -68,10 +69,22 @@ describe('GlobalExceptionFilter', () => {
     });
   });
 
-  it('still reports an unknown error as a 500', () => {
-    filter.catch(new Error('something exploded'), host);
+  // SEC-07: an unexpected error's message is internal and stays in the log.
+  it('reports an unknown error as a generic 500', () => {
+    filter.catch(new Error('Cast to ObjectId failed at /var/task/x'), host);
 
     expect(status).toHaveBeenCalledWith(500);
-    expect(body()).toMatchObject({ message: 'something exploded' });
+    expect(body()).toMatchObject({
+      message: 'Internal server error',
+      details: null,
+    });
+    expect(JSON.stringify(body())).not.toContain('ObjectId');
+  });
+
+  it('keeps the message of a deliberate 5xx HttpException', () => {
+    filter.catch(new ServiceUnavailableException('AI is not configured'), host);
+
+    expect(status).toHaveBeenCalledWith(503);
+    expect(body()).toMatchObject({ message: 'AI is not configured' });
   });
 });

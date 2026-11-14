@@ -118,8 +118,12 @@ export const UserSchema = new Schema(
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },
     lastLogout: { type: Date },
-    resetPasswordToken: { type: String },
-    resetPasswordExpires: { type: Date },
+    // Hidden by default (security: SEC-01). A reset token is a password: it
+    // was once returned by `GET /users` to every signed-in account, which let
+    // anyone request a reset for someone else and then read the token back.
+    // Stored as a SHA-256 digest, never the mailed value (SEC-05).
+    resetPasswordToken: { type: String, select: false },
+    resetPasswordExpires: { type: Date, select: false },
     // `select: false` for the same reason as `password`: neither belongs in a
     // profile response, and a leaked verification token is a free account.
     emailVerificationToken: { type: String, select: false },
@@ -133,8 +137,11 @@ export const UserSchema = new Schema(
       connections: { type: Boolean, default: true },
     },
     googleCalendar: {
-      accessToken: { type: String },
-      refreshToken: { type: String },
+      // OAuth credentials for the user's Google Calendar. Hidden by default
+      // (SEC-01): only the calendar-sync code reads them, with an explicit
+      // `+googleCalendar.accessToken +googleCalendar.refreshToken` select.
+      accessToken: { type: String, select: false },
+      refreshToken: { type: String, select: false },
       expiryDate: { type: Number },
       connected: { type: Boolean, default: false },
     },
@@ -177,8 +184,38 @@ UserSchema.virtual('physicalData', {
   foreignField: 'userId',
 });
 
-// Enable virtuals in JSON
-UserSchema.set('toJSON', { virtuals: true });
+/** Fields that must never be serialised into an API response. */
+export const USER_SECRET_FIELDS = [
+  'password',
+  'resetPasswordToken',
+  'resetPasswordExpires',
+  'emailVerificationToken',
+  'emailVerificationExpires',
+] as const;
+
+/**
+ * Strips credentials from a plain user object. Second line of defence behind
+ * `select: false` (SEC-01): a query that opts a secret back in for internal
+ * use still cannot leak it if the document ends up in a response.
+ */
+export function stripUserSecrets<T extends Record<string, unknown>>(ret: T): T {
+  for (const field of USER_SECRET_FIELDS) {
+    delete ret[field];
+  }
+  const calendar = ret.googleCalendar as Record<string, unknown> | undefined;
+  if (calendar && typeof calendar === 'object') {
+    delete calendar.accessToken;
+    delete calendar.refreshToken;
+  }
+  return ret;
+}
+
+// Enable virtuals in JSON. Only toJSON strips secrets: toObject feeds the
+// pre-save validation below and internal code that legitimately reads them.
+UserSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: Record<string, unknown>) => stripUserSecrets(ret),
+});
 UserSchema.set('toObject', { virtuals: true });
 
 // Add validation middleware

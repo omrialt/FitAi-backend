@@ -44,7 +44,10 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const secret = process.env.JWT_ACCESS_SECRET!;
-      const payload = jwt.verify(token, secret) as JwtPayload;
+      // Pinned algorithm (SEC-12): never let the token header choose it.
+      const payload = jwt.verify(token, secret, {
+        algorithms: ['HS256'],
+      }) as JwtPayload;
 
       // Fetch user from database to get role (or use from token if available)
 
