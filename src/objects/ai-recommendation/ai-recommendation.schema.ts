@@ -23,10 +23,15 @@ export const metadataSchema = z
 
 // Define the Zod schema for validation
 export const aiRecommendationSchema = z.object({
-  userId: z.string({
-    required_error: 'User ID is required',
-    invalid_type_error: 'User ID must be a string',
-  }),
+  // A hydrated document's toObject() yields an ObjectId here, which the
+  // pre-save hook below validates — a string-only rule rejected every save.
+  userId: z.union([
+    z.string({
+      required_error: 'User ID is required',
+      invalid_type_error: 'User ID must be a string',
+    }),
+    z.object({}).passthrough(), // Accepts ObjectId
+  ]),
   category: recommendationCategorySchema,
   content: z.string({
     required_error: 'Content is required',
@@ -90,7 +95,7 @@ AiRecommendationSchema.index({ userId: 1, createdAt: -1 });
 AiRecommendationSchema.pre('save', function (next) {
   const result = aiRecommendationSchema.safeParse(this.toObject());
   if (!result.success) {
-    next(new Error(result.error.message));
+    return next(new Error(result.error.message));
   }
   next();
 });
